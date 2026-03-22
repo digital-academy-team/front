@@ -1,0 +1,13 @@
+# Local build output
+dist/
+build/
+node_modules/
+
+
+# OS-generated files
+.DS_Store
+
+# Local assistant/editor config
+.claude/
+.idea/
+.vscode/
