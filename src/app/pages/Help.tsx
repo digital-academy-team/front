@@ -25,11 +25,11 @@ const faqSections: FAQSection[] = [
       },
       {
         question: 'Do I need to create an account to browse courses?',
-        answer: 'No. You can browse and preview all courses without an account. You only need to create a free account when you want to enroll in courses, track progress, and access course content.',
+        answer: 'No. You can browse and preview courses without an account. You only need an account when you want to enroll, track progress, and access learning content.',
       },
       {
         question: 'How do I create an account?',
-        answer: 'Click "Sign Up" in the top navigation. Fill in your name, email, and password. Choose your role — Student (to learn) or Instructor (to teach). After signing up, you can immediately start browsing and enrolling in courses.',
+        answer: 'Click "Sign Up" in the top navigation and continue with Google. Student accounts are self-service. Instructor accounts are created by an admin and cannot be self-selected during signup.',
       },
     ],
   },
@@ -39,11 +39,11 @@ const faqSections: FAQSection[] = [
     items: [
       {
         question: 'How do I find a course?',
-        answer: 'Use the search bar at the top to search by topic, keyword, or instructor name. You can also browse by category using the "Categories" dropdown or the quick links in the navigation bar (Development, Design, Marketing, etc.). On the Courses page, use the filters on the left to narrow results by category, difficulty level, or price.',
+        answer: 'Use the search bar at the top to search by topic, keyword, or instructor name. You can also open the Courses page and use filters to narrow results by category, level, or price.',
       },
       {
         question: 'How do I enroll in a course?',
-        answer: 'Click on any course to view its details. If it\'s a paid course, click "Add to Cart" and proceed through the checkout. If it\'s free, you can enroll directly. Once enrolled, the course appears in "My Courses" in your profile, and you can start learning immediately.',
+        answer: 'Open any course to view details, add it to cart, and proceed through checkout. After successful enrollment, the course appears in "My Courses" in your profile.',
       },
       {
         question: 'Are there free courses?',
@@ -153,7 +153,7 @@ const faqSections: FAQSection[] = [
     items: [
       {
         question: 'How do I become an instructor?',
-        answer: 'Sign up and select "Instructor" as your role during registration. You\'ll gain access to the Instructor Dashboard where you can create and manage courses, view student analytics, and track your earnings.',
+        answer: 'Instructor accounts are provisioned by admin only. You cannot self-register as an instructor from the signup page. Contact your admin/support team to request instructor access, then log in with the provided account.',
       },
       {
         question: 'What can I do in the Instructor Dashboard?',
@@ -235,7 +235,7 @@ export default function Help() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {[
               { step: '1', icon: <Search className="w-6 h-6" />, title: 'Find a Course', desc: 'Browse thousands of courses by category, or search for a specific topic or skill.' },
-              { step: '2', icon: <ShoppingCart className="w-6 h-6" />, title: 'Enroll', desc: 'Add the course to your cart and complete checkout. Free courses are available instantly.' },
+              { step: '2', icon: <ShoppingCart className="w-6 h-6" />, title: 'Enroll', desc: 'Add the course to your cart and complete checkout to unlock access.' },
               { step: '3', icon: <Play className="w-6 h-6" />, title: 'Start Learning', desc: 'Access video lectures, take quizzes, and track your progress at your own pace.' },
               { step: '4', icon: <Award className="w-6 h-6" />, title: 'Earn a Certificate', desc: 'Complete all lectures to unlock your certificate of completion.' },
             ].map(item => (
@@ -303,7 +303,7 @@ export default function Help() {
       <div className="mt-12 text-center p-8 bg-gray-50 rounded-2xl border border-gray-100">
         <h3 className="font-bold text-lg mb-2">Still have questions?</h3>
         <p className="text-gray-600 text-sm mb-4">
-          Can't find what you're looking for? Browse all courses or create an account to start learning.
+          Can't find what you're looking for? Browse all courses or sign up with Google to start learning.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link to="/courses">
@@ -313,7 +313,7 @@ export default function Help() {
           </Link>
           <Link to="/signup">
             <Button className="bg-purple-600 hover:bg-purple-700 gap-2">
-              <User className="w-4 h-4" /> Create Free Account
+              <User className="w-4 h-4" /> Sign Up with Google
             </Button>
           </Link>
         </div>

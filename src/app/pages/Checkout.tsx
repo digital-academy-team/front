@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -34,6 +34,16 @@ export default function Checkout() {
     toast.success('Payment successful!');
   };
 
+  useEffect(() => {
+    if (items.length === 0) {
+      navigate('/cart', { replace: true });
+    }
+  }, [items.length, navigate]);
+
+  if (items.length === 0) {
+    return null;
+  }
+
   if (step === 'confirmation') {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
@@ -41,7 +51,7 @@ export default function Checkout() {
         <h1 className="text-3xl font-bold mb-2">Purchase Complete!</h1>
         <p className="text-gray-600 mb-2">Order ID: <span className="font-mono font-bold">#{orderId}</span></p>
         <p className="text-gray-600 mb-8">You now have access to all purchased courses.</p>
-        <Button onClick={() => navigate('/dashboard')} className="bg-purple-600 hover:bg-purple-700">
+        <Button onClick={() => navigate('/profile')} className="bg-purple-600 hover:bg-purple-700">
           Go to My Learning
         </Button>
       </div>

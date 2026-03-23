@@ -441,7 +441,17 @@ export const authApi = {
         method: 'POST',
         body: JSON.stringify(primaryPayload),
       });
-    } catch {
+    } catch (primaryError: any) {
+      const message = String(primaryError?.message ?? '').toLowerCase();
+      const isLikelyFieldMismatch =
+        message.includes('field is required') ||
+        message.includes('this field may not be blank') ||
+        message.includes('required');
+
+      if (!isLikelyFieldMismatch) {
+        throw primaryError;
+      }
+
       return apiRequest<LoginApiResponse>('/api/users/auth/login/', {
         method: 'POST',
         body: JSON.stringify(fallbackPayload),
@@ -460,12 +470,44 @@ export const authApi = {
       }),
     }),
 
-  register: async (_data: { name: string; email: string; password: string; role: string }) => {
-    throw new Error('Registration endpoint was removed in backend. Use Google login or admin-created accounts.');
-  },
+  requestPasswordReset: async (email: string) => {
+    const payload = JSON.stringify({ email });
+    const endpoints = [
+      '/api/users/auth/forgot-password/',
+      '/api/users/auth/password-reset/',
+      '/api/users/auth/reset-password/',
+    ];
 
-  verifyCode: async (_email: string, _code: string) => {
-    throw new Error('Verification endpoint was removed in backend.');
+    let lastError: unknown = null;
+
+    for (const endpoint of endpoints) {
+      try {
+        return await apiRequest<{ message?: string }>(endpoint, {
+          method: 'POST',
+          body: payload,
+        });
+      } catch (error: any) {
+        const message = String(error?.message ?? '').toLowerCase();
+        const unavailableEndpoint =
+          message.includes('http 404') ||
+          message.includes('http 405') ||
+          message.includes('method "get" not allowed') ||
+          message.includes('method "post" not allowed');
+
+        if (unavailableEndpoint) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw new Error('Password reset is currently unavailable. Please contact support.');
+    }
+
+    throw new Error('Password reset is currently unavailable. Please contact support.');
   },
 
   logout: async () => undefined,

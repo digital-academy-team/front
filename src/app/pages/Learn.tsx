@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router';
 import { courses } from '@/app/data/courses';
 import { courseQuizzes, type SectionQuiz } from '@/app/data/quizzes';
@@ -60,7 +60,13 @@ function mapApiQuizToUi(
 }
 
 function QuizIdle({ quiz, storageKey, onStart }: { quiz: UiQuiz; storageKey: string; onStart: () => void }) {
-  const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
+  let stored: { score: number; total: number; passed: boolean } | null = null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    stored = raw ? JSON.parse(raw) : null;
+  } catch {
+    stored = null;
+  }
   return (
     <div className="max-w-2xl mx-auto">
       <div className="bg-slate-800/70 border border-slate-600 rounded-2xl p-8 text-center shadow-xl">
@@ -184,13 +190,23 @@ export default function Learn() {
   const fallbackCourse = cachedCourses.find(c => c.id === learningId || c.slug === learningId) ?? courses.find(c => c.id === learningId);
   const resolvedCourseId = myCourseDetail?.course?.id ?? fallbackCourse?.id ?? learningId;
   const resolvedCourse = cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId) ?? courses.find(c => c.id === resolvedCourseId);
-  const sections = myCourseDetail
-    ? myCourseDetail.course.units.map((unit) => ({
-        section: unit.title,
-        lectures: unit.lessons.length,
-        duration: '--',
-      }))
-    : (resolvedCourse?.curriculum ?? []);
+  const sections = useMemo(
+    () =>
+      myCourseDetail
+        ? myCourseDetail.course.units.map((unit) => ({
+            section: unit.title,
+            lectures: unit.lessons.length,
+            duration: '--',
+          }))
+        : (resolvedCourse?.curriculum ?? []),
+    [myCourseDetail, resolvedCourseId]
+  );
+  const sectionLectureCounts = useMemo(() => sections.map((section) => section.lectures), [sections]);
+  const sectionLectureCountsKey = useMemo(() => sectionLectureCounts.join(','), [sectionLectureCounts]);
+  const totalLecturesInSections = useMemo(
+    () => sectionLectureCounts.reduce((sum, lectureCount) => sum + lectureCount, 0),
+    [sectionLectureCounts]
+  );
   const courseTitle = resolvedCourse?.title ?? 'My Course';
   const [currentSection, setCurrentSection] = useState(0);
   const [currentLecture, setCurrentLecture] = useState(0);
@@ -261,14 +277,14 @@ export default function Learn() {
         }
 
         const percent = Number(payload?.progress ?? 0);
-        if (!Number.isFinite(percent) || percent <= 0 || sections.length === 0) return;
+        if (!Number.isFinite(percent) || percent <= 0 || sectionLectureCounts.length === 0) return;
 
-        const total = sections.reduce((sum, s) => sum + s.lectures, 0);
+        const total = totalLecturesInSections;
         const estimatedCompleted = Math.min(total, Math.max(0, Math.round((percent / 100) * total)));
 
         const estimatedKeys: string[] = [];
-        for (let sIdx = 0; sIdx < sections.length; sIdx += 1) {
-          for (let lIdx = 0; lIdx < sections[sIdx].lectures; lIdx += 1) {
+        for (let sIdx = 0; sIdx < sectionLectureCounts.length; sIdx += 1) {
+          for (let lIdx = 0; lIdx < sectionLectureCounts[sIdx]; lIdx += 1) {
             if (estimatedKeys.length >= estimatedCompleted) break;
             estimatedKeys.push(`${sIdx}-${lIdx}`);
           }
@@ -282,7 +298,7 @@ export default function Learn() {
     };
 
     loadServerProgress();
-  }, [enrollmentId, resolvedCourseId, sections]);
+  }, [enrollmentId, resolvedCourseId, sectionLectureCountsKey, totalLecturesInSections]);
 
   useEffect(() => {
     if (!sections.length) return;

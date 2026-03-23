@@ -1,16 +1,17 @@
-import { useState } from 'react';
 import { Link } from 'react-router';
 import { Star, Clock, Users, Heart } from 'lucide-react';
 import { Course } from '../data/courses';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
+import { useWishlist } from '@/app/store/WishlistContext';
 
 interface CourseCardProps {
   course: Course;
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const [wishlisted, setWishlisted] = useState(false);
+  const { has, toggle } = useWishlist();
+  const wishlisted = has(course.id);
   const discount = course.originalPrice
     ? Math.round((1 - course.price / course.originalPrice) * 100)
     : null;
@@ -37,7 +38,7 @@ export function CourseCard({ course }: CourseCardProps) {
           )}
           <button
             type="button"
-            onClick={e => { e.preventDefault(); setWishlisted(w => !w); }}
+            onClick={e => { e.preventDefault(); toggle(course.id); }}
             className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 ${wishlisted ? 'bg-red-500 text-white' : 'bg-white text-gray-500 hover:text-red-500 hover:bg-red-50'}`}
           >
             <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />

@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/app/store/AuthContext';
@@ -17,6 +17,7 @@ interface LoginForm {
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginForm>();
 
@@ -24,7 +25,10 @@ export default function Login() {
     try {
       const role = await login(data.identifier, data.password);
       toast.success('Welcome back!');
-      navigate(role === 'instructor' ? '/instructor' : '/profile', { replace: true });
+      const fallbackPath = role === 'instructor' ? '/instructor' : '/profile';
+      const from = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+      const redirectTo = from?.pathname ? `${from.pathname}${from.search ?? ''}${from.hash ?? ''}` : fallbackPath;
+      navigate(redirectTo, { replace: true });
     } catch (err: any) {
       toast.error(err?.message ?? 'API error. Please try again.');
     }

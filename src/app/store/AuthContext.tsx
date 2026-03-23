@@ -10,8 +10,6 @@ interface AuthContextType extends AuthState {
     refresh: string,
     profileHint?: { email?: string; username?: string; fullName?: string; firstName?: string; lastName?: string }
   ) => Promise<'student' | 'instructor'>;
-  register: (name: string, email: string, password: string, role: 'student' | 'instructor') => Promise<'verification_sent'>;
-  verifyRegistration: (name: string, email: string, code: string, role: 'student' | 'instructor') => Promise<'student' | 'instructor'>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   enrollInCourse: (courseId: string, courseTitle: string, amount: number) => Promise<void>;
@@ -195,7 +193,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return role;
     } catch (err: any) {
       setApiAvailable(false);
-      throw new Error(err?.message ?? 'API error');
+      const rawMessage = String(err?.message ?? 'API error');
+      const normalized = rawMessage.toLowerCase();
+      const accountNotFound =
+        normalized.includes('no active account') ||
+        normalized.includes('user not found') ||
+        normalized.includes('not found') ||
+        normalized.includes('does not exist');
+      const payloadValidation =
+        normalized.includes('field is required') ||
+        normalized.includes('this field may not be blank');
+
+      if (accountNotFound || payloadValidation) {
+        throw new Error("This account doesn't exist. Please sign up.");
+      }
+
+      throw new Error(rawMessage);
     }
   };
 
@@ -248,18 +261,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return role;
   };
 
-  const register = async (name: string, email: string, password: string, role: 'student' | 'instructor') => {
-    setApiAvailable(false);
-    await authApi.register({ name, email, password, role });
-    return 'verification_sent';
-  };
-
-  const verifyRegistration = async (_name: string, email: string, code: string, _role: 'student' | 'instructor') => {
-    setApiAvailable(false);
-    await authApi.verifyCode(email, code);
-    return 'student';
-  };
-
   const logout = () => {
     clearTokens();
     if (apiAvailable) authApi.logout().catch(() => {});
@@ -298,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (idx >= 0) { users[idx] = updated; localStorage.setItem('da_users', JSON.stringify(users)); }
     const tx: Transaction = { id: crypto.randomUUID(), date: new Date().toISOString(), courseTitle, amount, status: 'completed' };
     setTransactions(prev => [tx, ...prev]);
-    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/dashboard' }, ...prev]);
+    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/profile' }, ...prev]);
 
     if (apiAvailable) {
       syncStudentData().catch(() => {
@@ -311,7 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const markAllNotificationsRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
 
   return (
-    <AuthContext.Provider value={{ ...state, apiAvailable, login, authenticateWithTokens, register, verifyRegistration, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
+    <AuthContext.Provider value={{ ...state, apiAvailable, login, authenticateWithTokens, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
       {children}
     </AuthContext.Provider>
   );
