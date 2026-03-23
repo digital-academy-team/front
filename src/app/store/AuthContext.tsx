@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthState, Notification, Transaction } from '@/app/types';
 import { authApi, courseApi, orderApi, resolveCourseId, setTokens, clearTokens, getAccessToken } from '@/app/services/api';
+import { courses, type Course } from '@/app/data/courses';
+import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
 interface AuthContextType extends AuthState {
   apiAvailable: boolean;
@@ -51,6 +53,23 @@ function pickFirstString(...values: Array<unknown>): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return '';
+}
+
+function normalizeTitleKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function parseCurrencyAmount(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^0-9.-]/g, '');
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function normalizeLoginPayload(payload: any): {
@@ -118,9 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const syncStudentData = async () => {
-    const [myCoursesRes, ordersRes] = await Promise.all([
+    const [myCoursesRes, ordersRes, publicRes] = await Promise.all([
       courseApi.myEnrolledCourses(),
       orderApi.list().catch(() => ({ data: [] as Array<{ course_title: string; total_amount: string | null }> })),
+      courseApi.userCourses().catch(() => null),
     ]);
 
     const enrolledCourseIds = (myCoursesRes.data ?? []).map(item => resolveCourseId(item.course)).filter(Boolean);
@@ -137,15 +157,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (Array.isArray(ordersRes.data) && ordersRes.data.length > 0) {
-      setTransactions(
-        ordersRes.data.map((item, idx) => ({
-          id: `order-${idx}-${item.course_title}`,
-          date: new Date().toISOString(),
-          courseTitle: item.course_title,
-          amount: Number(item.total_amount ?? 0),
-          status: 'completed',
-        }))
-      );
+      const publicCoursesFromApi = publicRes?.data?.map(mapApiCourseToCourse) ?? [];
+      const cachedCourses: Course[] = load('da_public_courses_cache', []);
+      const allCourses = [...publicCoursesFromApi, ...cachedCourses, ...courses];
+
+      const fallbackAmountByTitle = new Map<string, number>();
+      allCourses.forEach((course) => {
+        const key = normalizeTitleKey(course.title);
+        if (!key || !Number.isFinite(course.price) || course.price <= 0 || fallbackAmountByTitle.has(key)) return;
+        fallbackAmountByTitle.set(key, course.price);
+      });
+
+      setTransactions((prev) => {
+        const previousAmountByTitle = new Map<string, number>();
+        prev.forEach((tx) => {
+          const key = normalizeTitleKey(tx.courseTitle);
+          if (!key || !Number.isFinite(tx.amount) || tx.amount <= 0 || previousAmountByTitle.has(key)) return;
+          previousAmountByTitle.set(key, tx.amount);
+        });
+
+        return ordersRes.data.map((item: any, idx) => {
+          const courseTitle =
+            pickFirstString(item?.course_title, item?.courseTitle, item?.title) || `Course purchase #${idx + 1}`;
+          const key = normalizeTitleKey(courseTitle);
+
+          const amountFromApi =
+            parseCurrencyAmount(item?.total_amount) ??
+            parseCurrencyAmount(item?.amount) ??
+            parseCurrencyAmount(item?.total) ??
+            parseCurrencyAmount(item?.price);
+
+          const amount =
+            (amountFromApi !== null && amountFromApi > 0
+              ? amountFromApi
+              : previousAmountByTitle.get(key) ?? fallbackAmountByTitle.get(key) ?? 0);
+
+          const rawDate = pickFirstString(item?.created_at, item?.createdAt, item?.date, item?.ordered_at, item?.orderedAt);
+          const normalizedDate = rawDate && !Number.isNaN(Date.parse(rawDate)) ? rawDate : new Date().toISOString();
+          const statusRaw = pickFirstString(item?.status, item?.payment_status).toLowerCase();
+          const status: Transaction['status'] = statusRaw.includes('refund') ? 'refunded' : 'completed';
+
+          return {
+            id: String(item?.id ?? `order-${idx}-${courseTitle}`),
+            date: normalizedDate,
+            courseTitle,
+            amount,
+            status,
+          };
+        });
+      });
     }
   };
 
