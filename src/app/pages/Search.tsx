@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { courses } from '@/app/data/courses';
+import { courses, Course } from '@/app/data/courses';
 import { CourseCard } from '@/app/components/CourseCard';
+import { courseApi } from '@/app/services/api';
+import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
 function loadSearchCourses() {
   try {
@@ -17,7 +19,27 @@ function loadSearchCourses() {
 export default function Search() {
   const [searchParams] = useSearchParams();
   const q = searchParams.get('q') || '';
-  const availableCourses = loadSearchCourses();
+  const [availableCourses, setAvailableCourses] = useState<Course[]>(() => loadSearchCourses());
+
+  useEffect(() => {
+    let active = true;
+
+    courseApi
+      .userCourses()
+      .then((response) => {
+        if (!active || !Array.isArray(response?.data)) return;
+        const mappedCourses = response.data.map(mapApiCourseToCourse);
+        setAvailableCourses(mappedCourses);
+        localStorage.setItem('da_public_courses_cache', JSON.stringify(mappedCourses));
+      })
+      .catch(() => {
+        // Keep cache/local fallback when API is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const results = useMemo(() => {
     if (!q.trim()) return [];

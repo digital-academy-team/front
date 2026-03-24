@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   Search, User, LogOut, BookOpen,
@@ -13,12 +13,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { courses } from '../data/courses';
+import { courses, Course } from '../data/courses';
 import { useAuth } from '@/app/store/AuthContext';
 import { useCart } from '@/app/store/CartContext';
 import { toast } from 'sonner';
+import { courseApi } from '@/app/services/api';
+import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
-function loadSearchCourses() {
+function loadSearchCourses(): Course[] {
   try {
     const raw = localStorage.getItem('da_public_courses_cache');
     if (!raw) return courses;
@@ -36,7 +38,27 @@ export function Header() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const availableCourses = loadSearchCourses();
+  const [availableCourses, setAvailableCourses] = useState<Course[]>(() => loadSearchCourses());
+
+  useEffect(() => {
+    let active = true;
+
+    courseApi
+      .userCourses()
+      .then((response) => {
+        if (!active || !Array.isArray(response?.data)) return;
+        const mappedCourses = response.data.map(mapApiCourseToCourse);
+        setAvailableCourses(mappedCourses);
+        localStorage.setItem('da_public_courses_cache', JSON.stringify(mappedCourses));
+      })
+      .catch(() => {
+        // Keep cache/local fallback when API is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const searchResults = searchQuery.trim()
     ? availableCourses

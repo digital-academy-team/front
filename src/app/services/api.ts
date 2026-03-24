@@ -278,6 +278,9 @@ export interface UserPublicCourseItem {
   instructor?: string;
   instructor_name?: string;
   teacher_name?: string;
+  avg_rating?: number | string | null;
+  comments_count?: number | string | null;
+  students_count?: number | string | null;
 }
 
 export interface UserPublicCourseListResponse {
@@ -290,6 +293,26 @@ export interface UserCoursesQueryParams {
   category?: string[];
   price_min?: number;
   price_max?: number;
+}
+
+export interface CourseCommentItem {
+  id: string;
+  comment: string;
+  likes: number;
+  created_at?: string;
+  user?: {
+    id?: string;
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  };
+}
+
+export interface CourseCommentListResponse {
+  success: boolean;
+  status: number;
+  data: CourseCommentItem[];
 }
 
 export interface MyCourseListItem {
@@ -587,6 +610,33 @@ export const courseApi = {
     return apiRequest<any>('/api/teachers/lesson/', { method: 'POST', body: formData });
   },
 
+  listLessons: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/teachers/lesson/');
+    return wrapApiData(response, [] as any[]);
+  },
+
+  lessonDetail: (lessonId: string) => apiRequest<any>(`/api/teachers/lesson/${lessonId}/`),
+
+  updateLesson: (lessonId: string, data: Partial<CreateLessonApiPayload>) => {
+    const formData = new FormData();
+    if (typeof data.course_unit === 'string') formData.append('course_unit', data.course_unit);
+    if (typeof data.title === 'string') formData.append('title', data.title);
+    if (typeof data.desc === 'string') formData.append('desc', data.desc);
+    if (typeof data.additional_task === 'string') formData.append('additional_task', data.additional_task);
+    if (data.video) formData.append('video', data.video);
+    if (data.presentation) formData.append('presentation', data.presentation);
+
+    return apiRequest<any>(`/api/teachers/lesson/${lessonId}/`, {
+      method: 'PATCH',
+      body: formData,
+    });
+  },
+
+  removeLesson: (lessonId: string) =>
+    apiRequest<void>(`/api/teachers/lesson/${lessonId}/`, {
+      method: 'DELETE',
+    }),
+
   myCourses: async () => {
     return apiRequest<UserCourseListResponse>(TEACHER_COURSES_ENDPOINT);
   },
@@ -640,7 +690,15 @@ export const courseApi = {
 
   detail: (id: string) => apiRequest<any>(`${TEACHER_COURSES_ENDPOINT}${id}/`),
 
-  publicDetail: (slugOrId: string) => apiRequest<any>(`/api/users/courses/${slugOrId}/`),
+  remove: (id: string) =>
+    apiRequest<void>(`${TEACHER_COURSES_ENDPOINT}${id}/`, {
+      method: 'DELETE',
+    }),
+
+  publicDetail: async (slugOrId: string) => {
+    const response = await apiRequest<MaybeWrappedResponse<any>>(`/api/users/courses/${slugOrId}/`);
+    return unwrapApiData(response, null as any);
+  },
 
   userCourses: async (params?: UserCoursesQueryParams) => {
     if (!params) {
@@ -689,7 +747,10 @@ export const courseApi = {
       body: JSON.stringify({ course: id }),
     }),
 
-  reviews: (id: string) => apiRequest<any[]>(`/api/users/comments/?course=${id}`),
+  reviews: async (id: string) => {
+    const response = await apiRequest<MaybeWrappedResponse<CourseCommentItem[]>>(`/api/users/comments/?course=${id}`);
+    return wrapApiData(response, [] as CourseCommentItem[]);
+  },
 
   addReview: (id: string, data: { rating: number; comment: string }) =>
     apiRequest<any>('/api/users/comments/', {
@@ -767,6 +828,11 @@ export const courseApi = {
 
   getQuiz: (_courseId: string, quizId: number) =>
     apiRequest<any>(`/api/users/quiz/${quizId}/`),
+
+  listUserQuizzes: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/users/quiz/');
+    return wrapApiData(response, [] as any[]);
+  },
 
   submitQuiz: async (_courseId: string, quizId: number, answers: Record<number, number>) => {
     const payload = {
@@ -865,6 +931,24 @@ export const quizApi = {
     apiRequest<any>('/api/teachers/quiz/', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  list: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/teachers/quiz/');
+    return wrapApiData(response, [] as any[]);
+  },
+
+  detail: (id: string) => apiRequest<any>(`/api/teachers/quiz/${id}/`),
+
+  update: (id: string, data: Partial<CreateQuizApiPayload>) =>
+    apiRequest<any>(`/api/teachers/quiz/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  remove: (id: string) =>
+    apiRequest<void>(`/api/teachers/quiz/${id}/`, {
+      method: 'DELETE',
     }),
 };
 

@@ -24,8 +24,58 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/store/AuthContext';
-import { courseApi } from '@/app/services/api';
+import { courseApi, CourseCommentItem } from '@/app/services/api';
 import { toast } from 'sonner';
+
+interface CourseReviewViewModel {
+  id: string;
+  author: string;
+  rating: number;
+  comment: string;
+  createdAtLabel: string;
+}
+
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveReviewAuthor(review: CourseCommentItem): string {
+  const user = review.user;
+  const fullName = user?.full_name?.trim();
+  if (fullName) return fullName;
+  const firstLast = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+  if (firstLast) return firstLast;
+  if (user?.username?.trim()) return user.username.trim();
+  return 'Student';
+}
+
+function formatReviewDate(value?: string): string {
+  if (!value) return 'Recently';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Recently';
+
+  const diffMs = Date.now() - parsed.getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const days = Math.max(0, Math.floor(diffMs / day));
+
+  if (days <= 0) return 'Today';
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+
+  return parsed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function mapReview(item: CourseCommentItem): CourseReviewViewModel {
+  const normalizedRating = Math.max(0, Math.min(5, Math.round(toFiniteNumber(item.likes, 0))));
+  return {
+    id: item.id,
+    author: resolveReviewAuthor(item),
+    rating: normalizedRating,
+    comment: item.comment?.trim() || 'No comment text.',
+    createdAtLabel: formatReviewDate(item.created_at),
+  };
+}
 
 function resolveDetailInstructor(detail: any, fallback?: string): string {
   return (
@@ -52,6 +102,8 @@ export function CourseDetail() {
   const [securityCode, setSecurityCode] = useState('');
   const [isBuyingNow, setIsBuyingNow] = useState(false);
   const [apiCourse, setApiCourse] = useState<Course | null>(null);
+  const [courseReviews, setCourseReviews] = useState<CourseReviewViewModel[]>([]);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const { isAuthenticated, user, enrollInCourse } = useAuth();
   const stateCourse = (location.state as { course?: Course } | null)?.course;
@@ -92,15 +144,15 @@ export function CourseDetail() {
           slug: detail.slug ?? seed?.slug ?? id,
           title: detail.title ?? seed?.title ?? 'Untitled course',
           instructor: resolveDetailInstructor(detail, seed?.instructor),
-          rating: seed?.rating ?? 4.7,
-          reviewCount: seed?.reviewCount ?? 0,
+          rating: Math.max(0, Math.min(5, toFiniteNumber(detail.avg_rating, seed?.rating ?? 0))),
+          reviewCount: Math.max(0, Math.round(toFiniteNumber(detail.comments_count, seed?.reviewCount ?? 0))),
           price: detail.discount_price ?? detail.base_price ?? seed?.price ?? 0,
           originalPrice: detail.base_price ?? seed?.originalPrice,
           image: detail.cover_img ?? seed?.image ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
           category: seed?.category ?? 'development',
           level: seed?.level ?? 'All Levels',
           duration: seed?.duration ?? 'Self-paced',
-          students: seed?.students ?? 0,
+          students: Math.max(0, Math.round(toFiniteNumber(detail.students_count, seed?.students ?? 0))),
           description: detail.desc ?? seed?.description ?? '',
           lastUpdated: seed?.lastUpdated ?? '2026',
           language: seed?.language ?? 'English',
@@ -128,6 +180,33 @@ export function CourseDetail() {
       active = false;
     };
   }, [id, stateCourse]);
+
+  useEffect(() => {
+    const resolvedCourseId = apiCourse?.id ?? stateCourse?.id ?? id;
+    if (!resolvedCourseId || !isAuthenticated) {
+      setCourseReviews([]);
+      return;
+    }
+
+    let active = true;
+
+    const loadReviews = async () => {
+      try {
+        const response = await courseApi.reviews(resolvedCourseId);
+        if (!active) return;
+        const mapped = (response.data ?? []).map(mapReview);
+        setCourseReviews(mapped);
+      } catch {
+        if (active) setCourseReviews([]);
+      }
+    };
+
+    loadReviews();
+
+    return () => {
+      active = false;
+    };
+  }, [apiCourse?.id, stateCourse?.id, id, isAuthenticated]);
 
   if (!course) {
     return (
@@ -191,6 +270,64 @@ export function CourseDetail() {
       toast.success('Enrollment successful.');
     } finally {
       setIsBuyingNow(false);
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!isAuthenticated || !user?.enrolledCourseIds?.includes(course.id)) {
+      toast.error('Only enrolled users can leave a comment.');
+      return;
+    }
+
+    const targetCourseId = apiCourse?.id ?? stateCourse?.id ?? course.id;
+    if (!targetCourseId) {
+      toast.error('Course id is missing.');
+      return;
+    }
+
+    if (reviewRating < 1 || reviewRating > 5) {
+      toast.error('Choose a rating from 1 to 5 stars.');
+      return;
+    }
+
+    const trimmedComment = reviewComment.trim();
+    if (!trimmedComment) {
+      toast.error('Write your comment before submitting.');
+      return;
+    }
+
+    try {
+      setIsSubmittingReview(true);
+      await courseApi.addReview(targetCourseId, {
+        rating: reviewRating,
+        comment: trimmedComment,
+      });
+
+      const updatedReviews = await courseApi.reviews(targetCourseId);
+      const mapped = (updatedReviews.data ?? []).map(mapReview);
+      setCourseReviews(mapped);
+
+      const total = mapped.length;
+      const average = total > 0
+        ? mapped.reduce((sum, item) => sum + item.rating, 0) / total
+        : course.rating;
+
+      setApiCourse((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rating: Math.max(0, Math.min(5, average)),
+          reviewCount: total,
+        };
+      });
+
+      toast.success('Comment submitted!');
+      setReviewComment('');
+      setReviewRating(0);
+    } catch (error: any) {
+      toast.error(error?.message ?? 'Failed to submit comment.');
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -460,13 +597,10 @@ export function CourseDetail() {
                   <Button
                     size="sm"
                     className="mt-3 bg-purple-600 hover:bg-purple-700"
-                    onClick={() => {
-                      toast.success('Comment submitted!');
-                      setReviewComment('');
-                      setReviewRating(0);
-                    }}
+                    onClick={handleSubmitReview}
+                    disabled={isSubmittingReview}
                   >
-                    Submit Comment
+                    {isSubmittingReview ? 'Submitting...' : 'Submit Comment'}
                   </Button>
                 </CardContent>
               </Card>
@@ -481,32 +615,42 @@ export function CourseDetail() {
             ) : null}
 
             <div className="space-y-4">
-              {[1, 2, 3, 4].map((review) => (
-                <Card key={review} className="border-purple-100/80 hover:shadow-md transition-shadow">
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white font-semibold shrink-0">
-                        U{review}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="font-semibold text-gray-900">User {review}</span>
-                          <span className="text-xs text-gray-400">• 2 weeks ago</span>
-                        </div>
-                        <div className="flex mb-2">
-                          {[...Array(5)].map((_, i) => (
-                            <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          ))}
-                        </div>
-                        <p className="text-sm leading-relaxed text-gray-700">
-                          Very useful course. The explanations are clear, the practical examples are strong,
-                          and the learning flow is easy to follow. Recommended.
-                        </p>
-                      </div>
-                    </div>
+              {courseReviews.length === 0 ? (
+                <Card className="border-purple-100/80">
+                  <CardContent className="p-5 text-sm text-gray-600">
+                    No comments yet for this course.
                   </CardContent>
                 </Card>
-              ))}
+              ) : (
+                courseReviews.map((review) => (
+                  <Card key={review.id} className="border-purple-100/80 hover:shadow-md transition-shadow">
+                    <CardContent className="p-5">
+                      <div className="flex items-start gap-4">
+                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white font-semibold shrink-0">
+                          {review.author.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="font-semibold text-gray-900">{review.author}</span>
+                            <span className="text-xs text-gray-400">• {review.createdAtLabel}</span>
+                          </div>
+                          <div className="flex mb-2">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-4 h-4 ${
+                                  i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-sm leading-relaxed text-gray-700">{review.comment}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </section>
 
