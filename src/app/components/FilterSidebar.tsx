@@ -46,10 +46,10 @@ export function FilterSidebar({
 
   return (
     <aside className="lg:w-64 shrink-0">
-      <div className="sticky top-24">
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+      <div className="sticky top-20">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50/70">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="w-4 h-4 text-gray-600" />
               <h2 className="font-semibold text-sm">Filters</h2>
@@ -92,7 +92,7 @@ export function FilterSidebar({
             </div>
 
             {/* Price Range */}
-            <div className="border-t border-gray-100 pt-5">
+            <div className="border-t border-gray-200 pt-5">
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4">Price Range</h3>
               <Slider
                 min={minPrice} max={maxPrice} step={1}

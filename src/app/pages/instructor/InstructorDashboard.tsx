@@ -877,15 +877,16 @@ export default function InstructorDashboard() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">Instructor Dashboard</h1>
-      <div className="flex gap-4 mb-8 border-b">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8 py-8">
+      <h1 className="text-3xl font-bold mb-3">Instructor Dashboard</h1>
+      <p className="text-sm text-gray-500 mb-6">Manage courses, pricing, quizzes, and content updates from one place.</p>
+      <div className="flex gap-2 mb-8 p-1 bg-gray-100 rounded-xl w-fit">
         {(['overview', 'courses', 'create'] as Tab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-600 hover:text-gray-900'
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             {tab === 'create' ? 'Create Course' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -934,25 +935,28 @@ export default function InstructorDashboard() {
           )}
 
           {!isLoadingCourses && myCourses.length === 0 && (
-            <p className="text-sm text-gray-600">No courses yet.</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+              <p className="text-sm text-gray-700 font-medium mb-1">No courses yet.</p>
+              <p className="text-xs text-gray-500">Create your first course from the Create Course tab.</p>
+            </div>
           )}
 
           {!isLoadingCourses && myCourses.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3">Course</th>
-                    <th className="text-left py-3">Base Price</th>
-                    <th className="text-left py-3">Discount Price</th>
-                    <th className="text-left py-3">Actions</th>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-3">Course</th>
+                    <th className="text-left py-3 px-3">Base Price</th>
+                    <th className="text-left py-3 px-3">Discount Price</th>
+                    <th className="text-left py-3 px-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {myCourses.map(course => (
                     <Fragment key={course.id}>
                       <tr className="border-b hover:bg-gray-50">
-                        <td className="py-3 font-medium">
+                        <td className="py-3 px-3 font-medium">
                           <div className="flex items-center gap-3">
                             <img
                               src={course.cover_img ?? 'https://placehold.co/120x70?text=No+Image'}
@@ -965,9 +969,9 @@ export default function InstructorDashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3">{Number(course.base_price).toLocaleString()}</td>
-                        <td className="py-3">{Number(course.discount_price).toLocaleString()}</td>
-                        <td className="py-3">
+                        <td className="py-3 px-3">{Number(course.base_price).toLocaleString()}</td>
+                        <td className="py-3 px-3">{Number(course.discount_price).toLocaleString()}</td>
+                        <td className="py-3 px-3">
                           <div className="flex gap-2">
                             <Button type="button" variant="outline" onClick={() => startEditCourse(course)}>
                               Update
@@ -1287,52 +1291,68 @@ export default function InstructorDashboard() {
                       {quizCourseId === course.id && (
                         <tr className="border-b bg-gray-50">
                           <td colSpan={4} className="py-3">
-                            <div className="space-y-3">
+                            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
                               <p className="text-sm font-semibold">Create Quiz</p>
 
-                              <select
-                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={quizUnitId}
-                                onChange={e => {
-                                  const unitId = e.target.value;
-                                  setQuizUnitId(unitId);
-                                  setQuizLessonId('');
-                                }}
-                              >
-                                <option value="">Select a unit</option>
-                                {quizUnitOptions.map(unit => (
-                                  <option key={unit.id} value={unit.id}>
-                                    {unit.label}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Unit</Label>
+                                  <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    value={quizUnitId}
+                                    onChange={e => {
+                                      const unitId = e.target.value;
+                                      setQuizUnitId(unitId);
+                                      setQuizLessonId('');
+                                    }}
+                                  >
+                                    <option value="">Select a unit</option>
+                                    {quizUnitOptions.map(unit => (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
 
-                              <select
-                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={quizLessonId}
-                                onChange={e => setQuizLessonId(e.target.value)}
-                              >
-                                <option value="">Select a lesson</option>
-                                {filteredQuizLessonOptions.map(lesson => (
-                                  <option key={lesson.id} value={lesson.id}>
-                                    {lesson.label}
-                                  </option>
-                                ))}
-                              </select>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Lesson</Label>
+                                  <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    value={quizLessonId}
+                                    onChange={e => setQuizLessonId(e.target.value)}
+                                  >
+                                    <option value="">Select a lesson</option>
+                                    {filteredQuizLessonOptions.map(lesson => (
+                                      <option key={lesson.id} value={lesson.id}>
+                                        {lesson.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
 
-                              <Input
-                                placeholder="Quiz title"
-                                value={quizForm.title}
-                                onChange={e => setQuizForm(prev => ({ ...prev, title: e.target.value }))}
-                              />
-                              <Textarea
-                                placeholder="Quiz description"
-                                value={quizForm.description}
-                                onChange={e => setQuizForm(prev => ({ ...prev, description: e.target.value }))}
-                              />
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Quiz Title</Label>
+                                  <Input
+                                    placeholder="Quiz title"
+                                    value={quizForm.title}
+                                    onChange={e => setQuizForm(prev => ({ ...prev, title: e.target.value }))}
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Quiz Description</Label>
+                                  <Textarea
+                                    placeholder="Quiz description"
+                                    value={quizForm.description}
+                                    onChange={e => setQuizForm(prev => ({ ...prev, description: e.target.value }))}
+                                  />
+                                </div>
+                              </div>
 
                               {quizForm.questions.map((question, questionIndex) => (
-                                <div key={questionIndex} className="rounded-md border p-3 bg-white space-y-2">
+                                <div key={questionIndex} className="rounded-xl border border-gray-200 p-3 bg-white space-y-2 shadow-sm">
                                   <div className="flex items-center justify-between gap-2">
                                     <p className="text-xs font-semibold text-gray-600">Question {questionIndex + 1}</p>
                                     <Button
@@ -1433,98 +1453,106 @@ export default function InstructorDashboard() {
         <Card>
           <CardHeader><CardTitle>Create New Course</CardTitle></CardHeader>
           <CardContent>
-            <form className="space-y-4 max-w-3xl" onSubmit={handleCreateCourse}>
-              <div className="space-y-2">
-                <Label>Course Title</Label>
-                <Input
-                  placeholder="e.g. Complete React Developer Course"
-                  value={form.title}
-                  onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea
-                  placeholder="Short description of the course"
-                  value={form.desc}
-                  onChange={e => setForm(prev => ({ ...prev, desc: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 sm:max-w-[220px]">
-                  <Label>Base Price</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+            <form className="space-y-4 max-w-5xl" onSubmit={handleCreateCourse}>
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+                <p className="text-sm font-semibold">Course Details</p>
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label>Course Title</Label>
                     <Input
-                      type="number"
-                      min="0"
-                      className="pl-7"
-                      value={form.base_price}
-                      onChange={e => setForm(prev => ({ ...prev, base_price: Number(e.target.value) }))}
+                      placeholder="e.g. Complete React Developer Course"
+                      value={form.title}
+                      onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
                       required
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Base Price</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="pl-7"
+                        value={form.base_price}
+                        onChange={e => setForm(prev => ({ ...prev, base_price: Number(e.target.value) }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Discount Price</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="pl-7"
+                        value={form.discount_price}
+                        onChange={e => setForm(prev => ({ ...prev, discount_price: Number(e.target.value) }))}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2 sm:max-w-[220px]">
-                  <Label>Discount Price</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      className="pl-7"
-                      value={form.discount_price}
-                      onChange={e => setForm(prev => ({ ...prev, discount_price: Number(e.target.value) }))}
+
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 items-start">
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      placeholder="Short description of the course"
+                      value={form.desc}
+                      onChange={e => setForm(prev => ({ ...prev, desc: e.target.value }))}
                       required
                     />
                   </div>
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <select
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={form.category}
-                  onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <select
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.category}
+                        onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
+                        required
+                      >
+                        <option value="">Select a category</option>
+                        {categories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              <div className="space-y-2">
-                <Label className="inline-flex items-center gap-1">
-                  <FileText className="w-4 h-4" /> Course Image
-                </Label>
-                <div className="max-w-sm space-y-1">
-                  <label
-                    htmlFor="create-course-cover-image"
-                    className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4" /> Upload image
-                  </label>
-                  <input
-                    id="create-course-cover-image"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => setForm(prev => ({ ...prev, cover_img: e.target.files?.[0] ?? null }))}
-                    required
-                  />
-                  <p className="text-xs text-gray-500 truncate">{form.cover_img?.name ?? 'No file selected'}</p>
+                    <div className="space-y-2">
+                      <Label className="inline-flex items-center gap-1">
+                        <FileText className="w-4 h-4" /> Course Image
+                      </Label>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="create-course-cover-image"
+                          className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                        >
+                          <Upload className="w-4 h-4" /> Upload image
+                        </label>
+                        <input
+                          id="create-course-cover-image"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => setForm(prev => ({ ...prev, cover_img: e.target.files?.[0] ?? null }))}
+                          required
+                        />
+                        <p className="text-xs text-gray-500 truncate">{form.cover_img?.name ?? 'No file selected'}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {form.units.map((unit, unitIndex) => (
-                <div key={unitIndex} className="border rounded-lg p-4 space-y-3">
+                <div key={unitIndex} className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="font-semibold">Unit {unitIndex + 1}</h3>
                     <Button
@@ -1556,7 +1584,7 @@ export default function InstructorDashboard() {
                   </div>
 
                   {unit.lessons.map((lesson, lessonIndex) => (
-                    <div key={lessonIndex} className="border rounded-md p-3 space-y-2 bg-gray-50">
+                    <div key={lessonIndex} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-medium">Lesson {lessonIndex + 1}</p>
                         <Button

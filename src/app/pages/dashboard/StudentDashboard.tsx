@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '@/app/store/AuthContext';
-import { useWishlist } from '@/app/store/WishlistContext';
 import { courses, Course } from '@/app/data/courses';
 import { courseApi, resolveCourseId } from '@/app/services/api';
 import { Button } from '@/app/components/ui/button';
@@ -10,11 +9,10 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { BookOpen, Heart, Receipt, Settings, Play } from 'lucide-react';
-import { CourseCard } from '@/app/components/CourseCard';
+import { BookOpen, Receipt, Settings, Play } from 'lucide-react';
 import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
-type Tab = 'learning' | 'wishlist' | 'history' | 'settings';
+type Tab = 'learning' | 'history' | 'settings';
 
 interface SettingsForm {
   name: string;
@@ -46,11 +44,9 @@ function loadCachedPublicCourses(): Course[] {
 
 export default function StudentDashboard() {
   const { user, updateUser, transactions } = useAuth();
-  const { courseIds, toggle } = useWishlist();
   const [activeTab, setActiveTab] = useState<Tab>('learning');
   const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourseView[]>([]);
   const [loadingEnrolledCourses, setLoadingEnrolledCourses] = useState(true);
-  const wishlistCourses = courses.filter(c => courseIds.includes(c.id));
 
   useEffect(() => {
     const loadMyCourses = async () => {
@@ -106,7 +102,6 @@ export default function StudentDashboard() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'learning', label: 'My Learning', icon: <BookOpen className="w-4 h-4" /> },
-    { id: 'wishlist', label: 'Wishlist', icon: <Heart className="w-4 h-4" /> },
     { id: 'history', label: 'Purchase History', icon: <Receipt className="w-4 h-4" /> },
     { id: 'settings', label: 'Account Settings', icon: <Settings className="w-4 h-4" /> },
   ];
@@ -177,33 +172,6 @@ export default function StudentDashboard() {
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'wishlist' && (
-            <div>
-              <h2 className="text-xl font-bold mb-4">Wishlist ({wishlistCourses.length})</h2>
-              {wishlistCourses.length === 0 ? (
-                <div className="text-center py-16 bg-gray-50 rounded-xl">
-                  <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">Your wishlist is empty</p>
-                  <Link to="/courses"><Button className="bg-purple-600 hover:bg-purple-700">Browse Courses</Button></Link>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {wishlistCourses.map(course => (
-                    <div key={course.id} className="relative">
-                      <CourseCard course={course} />
-                      <button
-                        onClick={() => toggle(course.id)}
-                        className="absolute top-2 right-2 bg-white rounded-full p-1.5 shadow hover:bg-red-50"
-                      >
-                        <Heart className="w-4 h-4 fill-red-500 text-red-500" />
-                      </button>
-                    </div>
                   ))}
                 </div>
               )}

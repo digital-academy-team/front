@@ -159,6 +159,15 @@ export function CourseDetail() {
     setIsBuyNowOpen(true);
   };
 
+  const handlePrimaryAction = () => {
+    if (isEnrolled) {
+      navigate(`/learn/${course.id}`);
+      return;
+    }
+
+    handleBuyNow();
+  };
+
   const handleConfirmBuyNow = async () => {
     const normalizedCard = creditNumber.replace(/\D/g, '');
     const normalizedCode = securityCode.replace(/\D/g, '');
@@ -292,10 +301,9 @@ export function CourseDetail() {
                     <Button
                       className="w-full bg-purple-600 hover:bg-purple-700"
                       size="lg"
-                      onClick={handleBuyNow}
-                      disabled={isEnrolled}
+                      onClick={handlePrimaryAction}
                     >
-                      Buy Now
+                      {isEnrolled ? 'View Course' : 'Buy Now'}
                     </Button>
                   </div>
 
@@ -390,10 +398,9 @@ export function CourseDetail() {
           </div>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
-            onClick={handleBuyNow}
-            disabled={isEnrolled}
+            onClick={handlePrimaryAction}
           >
-            Buy Now
+            {isEnrolled ? 'View Course' : 'Buy Now'}
           </Button>
         </div>
       </div>
