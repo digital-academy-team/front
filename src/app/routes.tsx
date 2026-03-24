@@ -12,7 +12,6 @@ import SetInitialPassword from './pages/auth/SetInitialPassword';
 import NotFound from './pages/NotFound';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
-import StudentDashboard from './pages/dashboard/StudentDashboard';
 import InstructorDashboard from './pages/instructor/InstructorDashboard';
 import Learn from './pages/Learn';
 import Search from './pages/Search';

@@ -10,7 +10,13 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+    <div className="relative min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+      <Link to="/" className="absolute top-4 left-4 flex items-center gap-2 shrink-0">
+        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center">
+          <span className="text-white text-xl font-bold">D</span>
+        </div>
+        <span className="font-bold text-lg sm:text-xl">Digital Academy</span>
+      </Link>
       <Card className="w-full max-w-md">
         <div className="flex justify-end p-2 pb-0">
           <Link

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthState, Notification, Transaction } from '@/app/types';
 import { authApi, courseApi, orderApi, resolveCourseId, setTokens, clearTokens, getAccessToken } from '@/app/services/api';
+import { courses, type Course } from '@/app/data/courses';
+import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
 interface AuthContextType extends AuthState {
   apiAvailable: boolean;
@@ -10,8 +12,6 @@ interface AuthContextType extends AuthState {
     refresh: string,
     profileHint?: { email?: string; username?: string; fullName?: string; firstName?: string; lastName?: string }
   ) => Promise<'student' | 'instructor'>;
-  register: (name: string, email: string, password: string, role: 'student' | 'instructor') => Promise<'verification_sent'>;
-  verifyRegistration: (name: string, email: string, code: string, role: 'student' | 'instructor') => Promise<'student' | 'instructor'>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   enrollInCourse: (courseId: string, courseTitle: string, amount: number) => Promise<void>;
@@ -53,6 +53,30 @@ function pickFirstString(...values: Array<unknown>): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return '';
+}
+
+function normalizeDisplayName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('@')) return trimmed.split('@')[0];
+  return trimmed;
+}
+
+function normalizeTitleKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function parseCurrencyAmount(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^0-9.-]/g, '');
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function normalizeLoginPayload(payload: any): {
@@ -120,9 +144,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const syncStudentData = async () => {
-    const [myCoursesRes, ordersRes] = await Promise.all([
+    const [myCoursesRes, ordersRes, publicRes] = await Promise.all([
       courseApi.myEnrolledCourses(),
       orderApi.list().catch(() => ({ data: [] as Array<{ course_title: string; total_amount: string | null }> })),
+      courseApi.userCourses().catch(() => null),
     ]);
 
     const enrolledCourseIds = (myCoursesRes.data ?? []).map(item => resolveCourseId(item.course)).filter(Boolean);
@@ -139,15 +164,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (Array.isArray(ordersRes.data) && ordersRes.data.length > 0) {
-      setTransactions(
-        ordersRes.data.map((item, idx) => ({
-          id: `order-${idx}-${item.course_title}`,
-          date: new Date().toISOString(),
-          courseTitle: item.course_title,
-          amount: Number(item.total_amount ?? 0),
-          status: 'completed',
-        }))
-      );
+      const publicCoursesFromApi = publicRes?.data?.map(mapApiCourseToCourse) ?? [];
+      const cachedCourses: Course[] = load('da_public_courses_cache', []);
+      const allCourses = [...publicCoursesFromApi, ...cachedCourses, ...courses];
+
+      const fallbackAmountByTitle = new Map<string, number>();
+      allCourses.forEach((course) => {
+        const key = normalizeTitleKey(course.title);
+        if (!key || !Number.isFinite(course.price) || course.price <= 0 || fallbackAmountByTitle.has(key)) return;
+        fallbackAmountByTitle.set(key, course.price);
+      });
+
+      setTransactions((prev) => {
+        const previousAmountByTitle = new Map<string, number>();
+        prev.forEach((tx) => {
+          const key = normalizeTitleKey(tx.courseTitle);
+          if (!key || !Number.isFinite(tx.amount) || tx.amount <= 0 || previousAmountByTitle.has(key)) return;
+          previousAmountByTitle.set(key, tx.amount);
+        });
+
+        return ordersRes.data.map((item: any, idx) => {
+          const courseTitle =
+            pickFirstString(item?.course_title, item?.courseTitle, item?.title) || `Course purchase #${idx + 1}`;
+          const key = normalizeTitleKey(courseTitle);
+
+          const amountFromApi =
+            parseCurrencyAmount(item?.total_amount) ??
+            parseCurrencyAmount(item?.amount) ??
+            parseCurrencyAmount(item?.total) ??
+            parseCurrencyAmount(item?.price);
+
+          const amount =
+            (amountFromApi !== null && amountFromApi > 0
+              ? amountFromApi
+              : previousAmountByTitle.get(key) ?? fallbackAmountByTitle.get(key) ?? 0);
+
+          const rawDate = pickFirstString(item?.created_at, item?.createdAt, item?.date, item?.ordered_at, item?.orderedAt);
+          const normalizedDate = rawDate && !Number.isNaN(Date.parse(rawDate)) ? rawDate : new Date().toISOString();
+          const statusRaw = pickFirstString(item?.status, item?.payment_status).toLowerCase();
+          const status: Transaction['status'] = statusRaw.includes('refund') ? 'refunded' : 'completed';
+
+          return {
+            id: String(item?.id ?? `order-${idx}-${courseTitle}`),
+            date: normalizedDate,
+            courseTitle,
+            amount,
+            status,
+          };
+        });
+      });
     }
   };
 
@@ -178,9 +243,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const resolvedEmail = normalized.user?.email ?? (claims?.email as string | undefined) ?? email;
+      const nameFromUser = pickFirstString(
+        (normalized.user as any)?.full_name,
+        (normalized.user as any)?.name,
+        normalized.user?.username,
+      );
+      const nameFromClaims = pickFirstString(
+        claims?.full_name,
+        claims?.name,
+        [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
+        [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+        claims?.preferred_username,
+        claims?.username,
+      );
+      const fallbackName = resolvedEmail ? resolvedEmail.split('@')[0] : 'student';
       const u: User = {
         id: normalized.user.id ?? String(claims?.user_id ?? claims?.id ?? Date.now()),
-        name: normalized.user.username ?? resolvedEmail.split('@')[0],
+        name: normalizeDisplayName(pickFirstString(nameFromUser, nameFromClaims, fallbackName)),
         email: resolvedEmail,
         role,
         enrolledCourseIds: [],
@@ -195,7 +274,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return role;
     } catch (err: any) {
       setApiAvailable(false);
-      throw new Error(err?.message ?? 'API error');
+      const rawMessage = String(err?.message ?? 'API error');
+      const normalized = rawMessage.toLowerCase();
+      const accountNotFound =
+        normalized.includes('no active account') ||
+        normalized.includes('user not found') ||
+        normalized.includes('not found') ||
+        normalized.includes('does not exist');
+      const payloadValidation =
+        normalized.includes('field is required') ||
+        normalized.includes('this field may not be blank');
+
+      if (accountNotFound || payloadValidation) {
+        throw new Error("This account doesn't exist. Please sign up.");
+      }
+
+      throw new Error(rawMessage);
     }
   };
 
@@ -220,7 +314,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nameFromClaims = pickFirstString(
       claims?.full_name,
       claims?.name,
+      [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
       [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+      claims?.preferred_username,
       claims?.username
     );
     const fallbackName = email ? email.split('@')[0] : 'student';
@@ -230,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const u: User = {
       id: userId,
-      name: pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName),
+      name: normalizeDisplayName(pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName)),
       email,
       role,
       enrolledCourseIds: [],
@@ -246,18 +342,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return role;
-  };
-
-  const register = async (name: string, email: string, password: string, role: 'student' | 'instructor') => {
-    setApiAvailable(false);
-    await authApi.register({ name, email, password, role });
-    return 'verification_sent';
-  };
-
-  const verifyRegistration = async (_name: string, email: string, code: string, _role: 'student' | 'instructor') => {
-    setApiAvailable(false);
-    await authApi.verifyCode(email, code);
-    return 'student';
   };
 
   const logout = () => {
@@ -298,7 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (idx >= 0) { users[idx] = updated; localStorage.setItem('da_users', JSON.stringify(users)); }
     const tx: Transaction = { id: crypto.randomUUID(), date: new Date().toISOString(), courseTitle, amount, status: 'completed' };
     setTransactions(prev => [tx, ...prev]);
-    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/dashboard' }, ...prev]);
+    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/profile' }, ...prev]);
 
     if (apiAvailable) {
       syncStudentData().catch(() => {
@@ -311,7 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const markAllNotificationsRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
 
   return (
-    <AuthContext.Provider value={{ ...state, apiAvailable, login, authenticateWithTokens, register, verifyRegistration, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
+    <AuthContext.Provider value={{ ...state, apiAvailable, login, authenticateWithTokens, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
       {children}
     </AuthContext.Provider>
   );

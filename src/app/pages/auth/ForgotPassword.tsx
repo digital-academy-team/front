@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router';
+import { authApi } from '@/app/services/api';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -9,11 +10,18 @@ import { CheckCircle } from 'lucide-react';
 
 export default function ForgotPassword() {
   const [sent, setSent] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<{ email: string }>();
 
-  const onSubmit = async (_data: { email: string }) => {
-    await new Promise(r => setTimeout(r, 800));
-    setSent(true);
+  const onSubmit = async (data: { email: string }) => {
+    setSubmitError(null);
+    try {
+      await authApi.requestPasswordReset(data.email);
+      setSent(true);
+    } catch (err: any) {
+      const message = String(err?.message ?? 'Unable to send password reset email right now.');
+      setSubmitError(message);
+    }
   };
 
   if (sent) {
@@ -45,6 +53,7 @@ export default function ForgotPassword() {
               <Input id="email" type="email" placeholder="you@example.com" {...register('email', { required: 'Email is required' })} />
               {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
             </div>
+            {submitError && <p className="text-sm text-red-500">{submitError}</p>}
             <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>
               {isSubmitting ? 'Sending...' : 'Send Reset Link'}
             </Button>

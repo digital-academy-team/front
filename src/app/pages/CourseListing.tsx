@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
-import { courses, categories } from '../data/courses';
+import { courses } from '../data/courses';
 import { Button } from '../components/ui/button';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { X, BookOpen } from 'lucide-react';
@@ -26,13 +26,7 @@ export function CourseListing() {
   const [priceBounds, setPriceBounds] = useState<[number, number]>(defaultPriceBounds);
   const [priceRange, setPriceRange] = useState<[number, number]>(defaultPriceBounds);
   const [apiCourses, setApiCourses] = useState(courses);
-  const [availableCategories, setAvailableCategories] = useState<CourseCategoryFilter[]>(
-    categories.map((item) => ({
-      id: item.id,
-      name: item.name,
-      iconKey: getCategoryVisuals(item.name, item.id).iconKey,
-    }))
-  );
+  const [availableCategories, setAvailableCategories] = useState<CourseCategoryFilter[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -50,7 +44,7 @@ export function CourseListing() {
         );
       })
       .catch(() => {
-        // Keep local category list if category API is unavailable.
+        // Keep empty categories if category API is unavailable.
       });
 
     return () => {
@@ -120,10 +114,10 @@ export function CourseListing() {
   const hasActiveFilters = selectedCategories.length > 0 || priceRange[0] > priceBounds[0] || priceRange[1] < priceBounds[1];
 
   return (
-    <div className="min-h-screen bg-gray-50/40">
+    <div className="min-h-screen bg-gray-50/50">
       {/* Page header */}
       <div className="bg-white border-b">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8 py-8">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8 py-7">
           <h1 className="text-3xl font-bold mb-1">All Courses</h1>
           <p className="text-gray-500 text-sm">
             Discover your next skill — {apiCourses.length} courses available
@@ -179,11 +173,11 @@ export function CourseListing() {
 
           <div className="flex-1 min-w-0">
             {/* Sort bar */}
-            <div className="flex items-center justify-between mb-6 bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
+            <div className="flex items-center justify-between mb-6 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
               <p className="text-sm text-gray-600 font-medium">
                 <span className="text-gray-900 font-bold">{filteredCourses.length}</span> courses found
               </p>
-              <span className="text-xs text-gray-500">Filtered by backend</span>
+              <span className="text-xs text-gray-500">Live results</span>
             </div>
 
             {filteredCourses.length > 0 ? (
@@ -193,12 +187,13 @@ export function CourseListing() {
                 ))}
               </div>
             ) : (
-              <div className="bg-white border border-gray-100 rounded-2xl text-center py-20 px-6 shadow-sm">
+              <div className="bg-white border border-gray-200 rounded-2xl text-center py-20 px-6 shadow-sm">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <BookOpen className="w-7 h-7 text-gray-400" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">No courses found</h3>
                 <p className="text-gray-500 text-sm mb-6">Try adjusting your filters to see more results.</p>
+                <p className="text-xs text-gray-400 mb-6">Tip: clear category + price filters to broaden results.</p>
                 <Button variant="outline" onClick={resetFilters} className="gap-2">
                   <X className="w-4 h-4" /> Clear All Filters
                 </Button>

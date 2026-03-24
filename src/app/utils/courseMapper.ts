@@ -2,7 +2,17 @@ import { Course } from '@/app/data/courses';
 import { UserPublicCourseItem } from '@/app/services/api';
 
 function resolveInstructor(item: UserPublicCourseItem): string {
-  return item.instructor_name || item.teacher_name || item.instructor || 'Digital Academy';
+  const anyItem = item as any;
+  return (
+    item.instructor_name ||
+    item.teacher_name ||
+    anyItem?.teacher_full_name ||
+    anyItem?.teacher?.full_name ||
+    anyItem?.teacher?.name ||
+    [anyItem?.teacher?.first_name, anyItem?.teacher?.last_name].filter(Boolean).join(' ') ||
+    item.instructor ||
+    'Digital Academy'
+  );
 }
 
 export function mapApiCourseToCourse(item: UserPublicCourseItem): Course {

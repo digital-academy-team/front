@@ -1,23 +1,24 @@
-import { useState } from 'react';
 import { Link } from 'react-router';
-import { Star, Clock, Users, Heart } from 'lucide-react';
+import { Star, Clock, Users, ShoppingCart } from 'lucide-react';
 import { Course } from '../data/courses';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
+import { useCart } from '@/app/store/CartContext';
 
 interface CourseCardProps {
   course: Course;
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const [wishlisted, setWishlisted] = useState(false);
+  const { addToCart, removeFromCart, isInCart } = useCart();
+  const inCart = isInCart(course.id);
   const discount = course.originalPrice
     ? Math.round((1 - course.price / course.originalPrice) * 100)
     : null;
 
   return (
     <Link to={`/course/${course.slug ?? course.id}`} state={{ course }} className="group block h-full">
-      <Card className="hover:shadow-xl transition-all duration-300 overflow-hidden h-full flex flex-col group-hover:-translate-y-0.5 border-gray-100">
+      <Card className="rounded-2xl hover:shadow-lg transition-all duration-300 overflow-hidden h-full flex flex-col group-hover:-translate-y-0.5 border-gray-200 bg-white">
         {/* Thumbnail */}
         <div className="relative aspect-video overflow-hidden bg-gray-100 shrink-0">
           <img
@@ -37,14 +38,29 @@ export function CourseCard({ course }: CourseCardProps) {
           )}
           <button
             type="button"
-            onClick={e => { e.preventDefault(); setWishlisted(w => !w); }}
-            className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 ${wishlisted ? 'bg-red-500 text-white' : 'bg-white text-gray-500 hover:text-red-500 hover:bg-red-50'}`}
+            onClick={e => {
+              e.preventDefault();
+              if (inCart) {
+                removeFromCart(course.id);
+                return;
+              }
+              addToCart({
+                courseId: course.id,
+                title: course.title,
+                instructor: course.instructor,
+                price: course.price,
+                originalPrice: course.originalPrice,
+                image: course.image,
+              });
+            }}
+            className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 ${inCart ? 'bg-purple-600 text-white' : 'bg-white text-gray-500 hover:text-purple-600 hover:bg-purple-50'}`}
+            aria-label={inCart ? 'Remove from cart' : 'Add to cart'}
           >
-            <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />
+            <ShoppingCart className="w-4 h-4" />
           </button>
         </div>
 
-        <CardContent className="p-4 flex flex-col flex-1">
+        <CardContent className="p-5 flex flex-col flex-1">
           <h3 className="font-semibold text-base leading-snug line-clamp-2 mb-1.5 group-hover:text-purple-600 transition-colors">
             {course.title}
           </h3>

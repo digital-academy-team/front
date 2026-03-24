@@ -8,7 +8,7 @@ import { Label } from '@/app/components/ui/label';
 import { Textarea } from '@/app/components/ui/textarea';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, BookOpen, Star, TrendingUp } from 'lucide-react';
+import { Users, BookOpen, Star, TrendingUp, X, Video, FileText, Upload } from 'lucide-react';
 
 type Tab = 'overview' | 'courses' | 'create';
 
@@ -53,6 +53,21 @@ interface CourseEditFormState {
   base_price: number;
   discount_price: number;
   cover_img: File | null;
+}
+
+interface ExistingLessonFormState {
+  course_unit: string;
+  title: string;
+  desc: string;
+  additional_task: string;
+  video: File | null;
+  presentation: File | null;
+}
+
+interface UpdateUnitDraftState {
+  title: string;
+  desc: string;
+  lessons: LessonFormItem[];
 }
 
 interface CourseLessonOption {
@@ -163,6 +178,8 @@ export default function InstructorDashboard() {
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<CourseEditFormState | null>(null);
+  const [editLessonDrafts, setEditLessonDrafts] = useState<ExistingLessonFormState[]>([]);
+  const [newUnitDrafts, setNewUnitDrafts] = useState<UpdateUnitDraftState[]>([]);
   const [quizCourseId, setQuizCourseId] = useState<string | null>(null);
   const [quizUnitId, setQuizUnitId] = useState('');
   const [quizUnitOptions, setQuizUnitOptions] = useState<CourseUnitOption[]>([]);
@@ -227,6 +244,8 @@ export default function InstructorDashboard() {
   };
 
   const startEditCourse = (course: UserCourseItem) => {
+    const firstUnitId = course.units?.[0]?.id ?? '';
+
     setEditingCourseId(course.id);
     setEditForm({
       title: course.title,
@@ -235,11 +254,123 @@ export default function InstructorDashboard() {
       discount_price: Number(course.discount_price),
       cover_img: null,
     });
+    setEditLessonDrafts([
+      {
+        course_unit: firstUnitId,
+        title: '',
+        desc: '',
+        additional_task: '',
+        video: null,
+        presentation: null,
+      },
+    ]);
+    setNewUnitDrafts([]);
   };
 
   const cancelEditCourse = () => {
     setEditingCourseId(null);
     setEditForm(null);
+    setEditLessonDrafts([]);
+    setNewUnitDrafts([]);
+  };
+
+  const addExistingLessonDraft = (course: UserCourseItem) => {
+    const firstUnitId = course.units?.[0]?.id ?? '';
+    setEditLessonDrafts(prev => [
+      ...prev,
+      {
+        course_unit: firstUnitId,
+        title: '',
+        desc: '',
+        additional_task: '',
+        video: null,
+        presentation: null,
+      },
+    ]);
+  };
+
+  const removeExistingLessonDraft = (draftIndex: number) => {
+    setEditLessonDrafts(prev => {
+      if (prev.length <= 1) {
+        toast.error('At least one lesson draft section must remain.', { id: 'min-update-lesson-draft' });
+        return prev;
+      }
+      return prev.filter((_, idx) => idx !== draftIndex);
+    });
+  };
+
+  const updateExistingLessonDraft = <K extends keyof ExistingLessonFormState>(
+    draftIndex: number,
+    key: K,
+    value: ExistingLessonFormState[K]
+  ) => {
+    setEditLessonDrafts(prev => prev.map((draft, idx) => (idx === draftIndex ? { ...draft, [key]: value } : draft)));
+  };
+
+  const addNewUnitDraft = () => {
+    setNewUnitDrafts(prev => [
+      ...prev,
+      {
+        title: '',
+        desc: '',
+        lessons: [createEmptyLesson()],
+      },
+    ]);
+  };
+
+  const removeNewUnitDraft = (unitIndex: number) => {
+    setNewUnitDrafts(prev => prev.filter((_, idx) => idx !== unitIndex));
+  };
+
+  const updateNewUnitDraft = (unitIndex: number, key: 'title' | 'desc', value: string) => {
+    setNewUnitDrafts(prev => prev.map((unit, idx) => (idx === unitIndex ? { ...unit, [key]: value } : unit)));
+  };
+
+  const addLessonToNewUnitDraft = (unitIndex: number) => {
+    setNewUnitDrafts(prev => prev.map((unit, idx) => (
+      idx === unitIndex ? { ...unit, lessons: [...unit.lessons, createEmptyLesson()] } : unit
+    )));
+  };
+
+  const removeLessonFromNewUnitDraft = (unitIndex: number, lessonIndex: number) => {
+    setNewUnitDrafts(prev => prev.map((unit, idx) => {
+      if (idx !== unitIndex) return unit;
+      if (unit.lessons.length <= 1) {
+        toast.error('Each new unit must include at least 1 lesson.', { id: 'min-new-unit-lesson' });
+        return unit;
+      }
+      return { ...unit, lessons: unit.lessons.filter((_, lIdx) => lIdx !== lessonIndex) };
+    }));
+  };
+
+  const updateNewUnitLessonDraft = (
+    unitIndex: number,
+    lessonIndex: number,
+    key: 'title' | 'desc' | 'additional_task',
+    value: string
+  ) => {
+    setNewUnitDrafts(prev => prev.map((unit, idx) => {
+      if (idx !== unitIndex) return unit;
+      return {
+        ...unit,
+        lessons: unit.lessons.map((lesson, lIdx) => (lIdx === lessonIndex ? { ...lesson, [key]: value } : lesson)),
+      };
+    }));
+  };
+
+  const updateNewUnitLessonFileDraft = (
+    unitIndex: number,
+    lessonIndex: number,
+    key: 'video' | 'presentation',
+    file: File | null
+  ) => {
+    setNewUnitDrafts(prev => prev.map((unit, idx) => {
+      if (idx !== unitIndex) return unit;
+      return {
+        ...unit,
+        lessons: unit.lessons.map((lesson, lIdx) => (lIdx === lessonIndex ? { ...lesson, [key]: file } : lesson)),
+      };
+    }));
   };
 
   const handleUpdateCourse = async () => {
@@ -252,6 +383,40 @@ export default function InstructorDashboard() {
       return;
     }
 
+    for (let i = 0; i < editLessonDrafts.length; i += 1) {
+      const draft = editLessonDrafts[i];
+      const hasAnyInput = Boolean(
+        draft.title.trim() ||
+        draft.desc.trim() ||
+        draft.additional_task.trim() ||
+        draft.video ||
+        draft.presentation
+      );
+
+      if (!hasAnyInput) continue;
+
+      if (!draft.course_unit || !draft.title.trim() || !draft.desc.trim()) {
+        toast.error(`Lesson draft ${i + 1} requires unit, title, and description.`);
+        return;
+      }
+    }
+
+    for (let uIdx = 0; uIdx < newUnitDrafts.length; uIdx += 1) {
+      const unit = newUnitDrafts[uIdx];
+      if (!unit.title.trim() || !unit.desc.trim()) {
+        toast.error(`New unit ${uIdx + 1} requires title and description.`);
+        return;
+      }
+
+      for (let lIdx = 0; lIdx < unit.lessons.length; lIdx += 1) {
+        const lesson = unit.lessons[lIdx];
+        if (!lesson.title.trim() || !lesson.desc.trim()) {
+          toast.error(`Unit ${uIdx + 1}, lesson ${lIdx + 1} requires title and description.`);
+          return;
+        }
+      }
+    }
+
     try {
       setIsUpdatingCourse(true);
       await courseApi.update(editingCourseId, {
@@ -260,10 +425,44 @@ export default function InstructorDashboard() {
         base_price: Number(editForm.base_price),
         discount_price: Number(editForm.discount_price),
         cover_img: editForm.cover_img,
+        units: newUnitDrafts.length
+          ? newUnitDrafts.map((unit) => ({
+              title: unit.title.trim(),
+              desc: unit.desc.trim(),
+              lessons: unit.lessons.map((lesson) => ({
+                title: lesson.title.trim(),
+                desc: lesson.desc.trim(),
+                additional_task: lesson.additional_task.trim(),
+                video: lesson.video,
+                presentation: lesson.presentation,
+              })),
+            }))
+          : undefined,
       });
 
+      for (const draft of editLessonDrafts) {
+        const hasAnyInput = Boolean(
+          draft.title.trim() ||
+          draft.desc.trim() ||
+          draft.additional_task.trim() ||
+          draft.video ||
+          draft.presentation
+        );
+
+        if (!hasAnyInput) continue;
+
+        await courseApi.createLesson({
+          course_unit: draft.course_unit,
+          title: draft.title.trim(),
+          desc: draft.desc.trim(),
+          additional_task: draft.additional_task.trim(),
+          video: draft.video,
+          presentation: draft.presentation,
+        });
+      }
+
       await reloadMyCourses();
-      toast.success('Course updated.');
+      toast.success('Course updated successfully.');
       cancelEditCourse();
     } catch (err: any) {
       toast.error(err?.message ?? 'Course update failed.');
@@ -530,6 +729,73 @@ export default function InstructorDashboard() {
     }));
   };
 
+  const removeUnit = (unitIndex: number) => {
+    if (form.units.length <= 1) {
+      toast.error('At least 1 unit is required.', { id: 'min-unit-error' });
+      return;
+    }
+
+    setForm(prev => ({
+      ...prev,
+      units: prev.units.filter((_, idx) => idx !== unitIndex),
+    }));
+  };
+
+  const removeLesson = (unitIndex: number, lessonIndex: number) => {
+    if ((form.units[unitIndex]?.lessons.length ?? 0) <= 1) {
+      toast.error('Each unit must have at least 1 lesson.', { id: 'min-lesson-error' });
+      return;
+    }
+
+    setForm(prev => ({
+      ...prev,
+      units: prev.units.map((unit, idx) => {
+        if (idx !== unitIndex) return unit;
+
+        return {
+          ...unit,
+          lessons: unit.lessons.filter((_, lIdx) => lIdx !== lessonIndex),
+        };
+      }),
+    }));
+  };
+
+  const removeQuizQuestion = (questionIndex: number) => {
+    if (quizForm.questions.length <= 1) {
+      toast.error('At least 1 question is required.', { id: 'min-question-error' });
+      return;
+    }
+
+    setQuizForm(prev => ({
+      ...prev,
+      questions: prev.questions.filter((_, qIdx) => qIdx !== questionIndex),
+    }));
+  };
+
+  const removeQuizVariant = (questionIndex: number, variantIndex: number) => {
+    if ((quizForm.questions[questionIndex]?.variants.length ?? 0) <= 2) {
+      toast.error('Each question must have at least 2 options.', { id: 'min-option-error' });
+      return;
+    }
+
+    setQuizForm(prev => ({
+      ...prev,
+      questions: prev.questions.map((question, qIdx) => {
+        if (qIdx !== questionIndex) return question;
+
+        const nextVariants = question.variants.filter((_, vIdx) => vIdx !== variantIndex);
+        const hasCorrect = nextVariants.some((variant) => variant.is_correct);
+
+        return {
+          ...question,
+          variants: hasCorrect
+            ? nextVariants
+            : nextVariants.map((variant, idx) => ({ ...variant, is_correct: idx === 0 })),
+        };
+      }),
+    }));
+  };
+
   const handleCreateCourse = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -611,15 +877,16 @@ export default function InstructorDashboard() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">Instructor Dashboard</h1>
-      <div className="flex gap-4 mb-8 border-b">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8 py-8">
+      <h1 className="text-3xl font-bold mb-3">Instructor Dashboard</h1>
+      <p className="text-sm text-gray-500 mb-6">Manage courses, pricing, quizzes, and content updates from one place.</p>
+      <div className="flex gap-2 mb-8 p-1 bg-gray-100 rounded-xl w-fit">
         {(['overview', 'courses', 'create'] as Tab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-600 hover:text-gray-900'
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             {tab === 'create' ? 'Create Course' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -668,25 +935,28 @@ export default function InstructorDashboard() {
           )}
 
           {!isLoadingCourses && myCourses.length === 0 && (
-            <p className="text-sm text-gray-600">No courses yet.</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+              <p className="text-sm text-gray-700 font-medium mb-1">No courses yet.</p>
+              <p className="text-xs text-gray-500">Create your first course from the Create Course tab.</p>
+            </div>
           )}
 
           {!isLoadingCourses && myCourses.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3">Course</th>
-                    <th className="text-left py-3">Base Price</th>
-                    <th className="text-left py-3">Discount Price</th>
-                    <th className="text-left py-3">Actions</th>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-3">Course</th>
+                    <th className="text-left py-3 px-3">Base Price</th>
+                    <th className="text-left py-3 px-3">Discount Price</th>
+                    <th className="text-left py-3 px-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {myCourses.map(course => (
                     <Fragment key={course.id}>
                       <tr className="border-b hover:bg-gray-50">
-                        <td className="py-3 font-medium">
+                        <td className="py-3 px-3 font-medium">
                           <div className="flex items-center gap-3">
                             <img
                               src={course.cover_img ?? 'https://placehold.co/120x70?text=No+Image'}
@@ -699,9 +969,9 @@ export default function InstructorDashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3">{Number(course.base_price).toLocaleString()}</td>
-                        <td className="py-3">{Number(course.discount_price).toLocaleString()}</td>
-                        <td className="py-3">
+                        <td className="py-3 px-3">{Number(course.base_price).toLocaleString()}</td>
+                        <td className="py-3 px-3">{Number(course.discount_price).toLocaleString()}</td>
+                        <td className="py-3 px-3">
                           <div className="flex gap-2">
                             <Button type="button" variant="outline" onClick={() => startEditCourse(course)}>
                               Update
@@ -716,38 +986,288 @@ export default function InstructorDashboard() {
                       {editingCourseId === course.id && editForm && (
                         <tr className="border-b bg-gray-50">
                           <td colSpan={4} className="py-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <Input
-                                value={editForm.title}
-                                onChange={e => setEditForm(prev => (prev ? { ...prev, title: e.target.value } : prev))}
-                                placeholder="Title"
-                              />
-                              <Input
-                                type="number"
-                                min="0"
-                                value={editForm.base_price}
-                                onChange={e => setEditForm(prev => (prev ? { ...prev, base_price: Number(e.target.value) } : prev))}
-                                placeholder="Base price"
-                              />
-                              <Input
-                                type="number"
-                                min="0"
-                                value={editForm.discount_price}
-                                onChange={e => setEditForm(prev => (prev ? { ...prev, discount_price: Number(e.target.value) } : prev))}
-                                placeholder="Discount price"
-                              />
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="w-full text-sm"
-                                onChange={e => setEditForm(prev => (prev ? { ...prev, cover_img: e.target.files?.[0] ?? null } : prev))}
-                              />
-                              <div className="md:col-span-2">
-                                <Textarea
-                                  value={editForm.desc}
-                                  onChange={e => setEditForm(prev => (prev ? { ...prev, desc: e.target.value } : prev))}
-                                  placeholder="Description"
-                                />
+                            <div className="space-y-4">
+                              <div className="rounded-md border bg-white p-4 space-y-4">
+                                <p className="text-sm font-semibold">Course Details</p>
+                                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-3 items-end">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-gray-600">Course Title</Label>
+                                    <Input
+                                      value={editForm.title}
+                                      onChange={e => setEditForm(prev => (prev ? { ...prev, title: e.target.value } : prev))}
+                                      placeholder="Course title"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-gray-600">Base Price</Label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        className="pl-7"
+                                        value={editForm.base_price}
+                                        onChange={e => setEditForm(prev => (prev ? { ...prev, base_price: Number(e.target.value) } : prev))}
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-gray-600">Discount Price</Label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        className="pl-7"
+                                        value={editForm.discount_price}
+                                        onChange={e => setEditForm(prev => (prev ? { ...prev, discount_price: Number(e.target.value) } : prev))}
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Course Description</Label>
+                                  <Textarea
+                                    value={editForm.desc}
+                                    onChange={e => setEditForm(prev => (prev ? { ...prev, desc: e.target.value } : prev))}
+                                    placeholder="Description"
+                                  />
+                                </div>
+
+                                <div className="space-y-1 max-w-sm">
+                                  <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                                    <FileText className="w-3.5 h-3.5" /> Course Image (optional)
+                                  </Label>
+                                  <label
+                                    htmlFor={`edit-course-${course.id}-cover-image`}
+                                    className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                                  >
+                                    <Upload className="w-4 h-4" /> Upload image
+                                  </label>
+                                  <input
+                                    id={`edit-course-${course.id}-cover-image`}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={e => setEditForm(prev => (prev ? { ...prev, cover_img: e.target.files?.[0] ?? null } : prev))}
+                                  />
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {editForm.cover_img?.name ?? 'No file selected'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="rounded-md border bg-white p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-semibold">Add Lessons To Existing Units</p>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => addExistingLessonDraft(course)}>
+                                    Add Lesson Draft
+                                  </Button>
+                                </div>
+
+                                {editLessonDrafts.map((draft, draftIndex) => (
+                                  <div key={draftIndex} className="rounded-md border bg-gray-50 p-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-xs font-semibold text-gray-600">Lesson Draft {draftIndex + 1}</p>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-gray-500 hover:text-red-600"
+                                        onClick={() => removeExistingLessonDraft(draftIndex)}
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                    <select
+                                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                      value={draft.course_unit}
+                                      onChange={e => updateExistingLessonDraft(draftIndex, 'course_unit', e.target.value)}
+                                    >
+                                      <option value="">Select a unit</option>
+                                      {course.units.map(unit => (
+                                        <option key={unit.id} value={unit.id}>
+                                          {unit.title}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                                      <Input
+                                        placeholder="Lesson title"
+                                        value={draft.title}
+                                        onChange={e => updateExistingLessonDraft(draftIndex, 'title', e.target.value)}
+                                      />
+                                      <Input
+                                        placeholder="Additional task"
+                                        value={draft.additional_task}
+                                        onChange={e => updateExistingLessonDraft(draftIndex, 'additional_task', e.target.value)}
+                                      />
+                                    </div>
+                                    <Textarea
+                                      placeholder="Lesson description"
+                                      value={draft.desc}
+                                      onChange={e => updateExistingLessonDraft(draftIndex, 'desc', e.target.value)}
+                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                                          <Video className="w-3.5 h-3.5" /> Video (optional)
+                                        </Label>
+                                        <label
+                                          htmlFor={`edit-course-${course.id}-lesson-video-${draftIndex}`}
+                                          className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                                        >
+                                          <Upload className="w-4 h-4" /> Upload video
+                                        </label>
+                                        <input
+                                          id={`edit-course-${course.id}-lesson-video-${draftIndex}`}
+                                          type="file"
+                                          accept="video/*"
+                                          className="hidden"
+                                          onChange={e => updateExistingLessonDraft(draftIndex, 'video', e.target.files?.[0] ?? null)}
+                                        />
+                                        <p className="text-xs text-gray-500 truncate">{draft.video?.name ?? 'No file selected'}</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                                          <FileText className="w-3.5 h-3.5" /> Presentation (optional)
+                                        </Label>
+                                        <label
+                                          htmlFor={`edit-course-${course.id}-lesson-presentation-${draftIndex}`}
+                                          className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                                        >
+                                          <Upload className="w-4 h-4" /> Upload presentation
+                                        </label>
+                                        <input
+                                          id={`edit-course-${course.id}-lesson-presentation-${draftIndex}`}
+                                          type="file"
+                                          accept=".pdf,.ppt,.pptx,.key"
+                                          className="hidden"
+                                          onChange={e => updateExistingLessonDraft(draftIndex, 'presentation', e.target.files?.[0] ?? null)}
+                                        />
+                                        <p className="text-xs text-gray-500 truncate">{draft.presentation?.name ?? 'No file selected'}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="rounded-md border bg-white p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-semibold">Add New Units</p>
+                                  <Button type="button" variant="outline" size="sm" onClick={addNewUnitDraft}>
+                                    Add Unit Draft
+                                  </Button>
+                                </div>
+                                {newUnitDrafts.length === 0 && (
+                                  <p className="text-xs text-gray-500">No new unit drafts yet.</p>
+                                )}
+
+                                {newUnitDrafts.map((unitDraft, unitIndex) => (
+                                  <div key={unitIndex} className="rounded-md border bg-gray-50 p-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-xs font-semibold text-gray-600">New Unit {unitIndex + 1}</p>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-gray-500 hover:text-red-600"
+                                        onClick={() => removeNewUnitDraft(unitIndex)}
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                    <Input
+                                      placeholder="Unit title"
+                                      value={unitDraft.title}
+                                      onChange={e => updateNewUnitDraft(unitIndex, 'title', e.target.value)}
+                                    />
+                                    <Textarea
+                                      placeholder="Unit description"
+                                      value={unitDraft.desc}
+                                      onChange={e => updateNewUnitDraft(unitIndex, 'desc', e.target.value)}
+                                    />
+
+                                    {unitDraft.lessons.map((lessonDraft, lessonIndex) => (
+                                      <div key={lessonIndex} className="rounded-md border bg-white p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <p className="text-xs font-semibold text-gray-600">Lesson {lessonIndex + 1}</p>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 text-gray-500 hover:text-red-600"
+                                            onClick={() => removeLessonFromNewUnitDraft(unitIndex, lessonIndex)}
+                                          >
+                                            <X className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                        <Input
+                                          placeholder="Lesson title"
+                                          value={lessonDraft.title}
+                                          onChange={e => updateNewUnitLessonDraft(unitIndex, lessonIndex, 'title', e.target.value)}
+                                        />
+                                        <Textarea
+                                          placeholder="Lesson description"
+                                          value={lessonDraft.desc}
+                                          onChange={e => updateNewUnitLessonDraft(unitIndex, lessonIndex, 'desc', e.target.value)}
+                                        />
+                                        <Input
+                                          placeholder="Additional task"
+                                          value={lessonDraft.additional_task}
+                                          onChange={e => updateNewUnitLessonDraft(unitIndex, lessonIndex, 'additional_task', e.target.value)}
+                                        />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div className="space-y-1">
+                                            <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                                              <Video className="w-3.5 h-3.5" /> Video (optional)
+                                            </Label>
+                                            <label
+                                              htmlFor={`new-unit-${unitIndex}-lesson-${lessonIndex}-video`}
+                                              className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                                            >
+                                              <Upload className="w-4 h-4" /> Upload video
+                                            </label>
+                                            <input
+                                              id={`new-unit-${unitIndex}-lesson-${lessonIndex}-video`}
+                                              type="file"
+                                              accept="video/*"
+                                              className="hidden"
+                                              onChange={e => updateNewUnitLessonFileDraft(unitIndex, lessonIndex, 'video', e.target.files?.[0] ?? null)}
+                                            />
+                                            <p className="text-xs text-gray-500 truncate">{lessonDraft.video?.name ?? 'No file selected'}</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                                              <FileText className="w-3.5 h-3.5" /> Presentation (optional)
+                                            </Label>
+                                            <label
+                                              htmlFor={`new-unit-${unitIndex}-lesson-${lessonIndex}-presentation`}
+                                              className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                                            >
+                                              <Upload className="w-4 h-4" /> Upload presentation
+                                            </label>
+                                            <input
+                                              id={`new-unit-${unitIndex}-lesson-${lessonIndex}-presentation`}
+                                              type="file"
+                                              accept=".pdf,.ppt,.pptx,.key"
+                                              className="hidden"
+                                              onChange={e => updateNewUnitLessonFileDraft(unitIndex, lessonIndex, 'presentation', e.target.files?.[0] ?? null)}
+                                            />
+                                            <p className="text-xs text-gray-500 truncate">{lessonDraft.presentation?.name ?? 'No file selected'}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    <Button type="button" variant="outline" size="sm" onClick={() => addLessonToNewUnitDraft(unitIndex)}>
+                                      Add Lesson To This Unit
+                                    </Button>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -758,7 +1278,7 @@ export default function InstructorDashboard() {
                                 disabled={isUpdatingCourse}
                                 onClick={handleUpdateCourse}
                               >
-                                {isUpdatingCourse ? 'Updating...' : 'Save Update'}
+                                {isUpdatingCourse ? 'Saving...' : 'Save Update'}
                               </Button>
                               <Button type="button" variant="outline" onClick={cancelEditCourse}>
                                 Cancel
@@ -771,67 +1291,98 @@ export default function InstructorDashboard() {
                       {quizCourseId === course.id && (
                         <tr className="border-b bg-gray-50">
                           <td colSpan={4} className="py-3">
-                            <div className="space-y-3">
+                            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
                               <p className="text-sm font-semibold">Create Quiz</p>
 
-                              <select
-                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={quizUnitId}
-                                onChange={e => {
-                                  const unitId = e.target.value;
-                                  setQuizUnitId(unitId);
-                                  setQuizLessonId('');
-                                }}
-                              >
-                                <option value="">Select a unit</option>
-                                {quizUnitOptions.map(unit => (
-                                  <option key={unit.id} value={unit.id}>
-                                    {unit.label}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Unit</Label>
+                                  <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    value={quizUnitId}
+                                    onChange={e => {
+                                      const unitId = e.target.value;
+                                      setQuizUnitId(unitId);
+                                      setQuizLessonId('');
+                                    }}
+                                  >
+                                    <option value="">Select a unit</option>
+                                    {quizUnitOptions.map(unit => (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
 
-                              <select
-                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={quizLessonId}
-                                onChange={e => setQuizLessonId(e.target.value)}
-                              >
-                                <option value="">Select a lesson</option>
-                                {filteredQuizLessonOptions.map(lesson => (
-                                  <option key={lesson.id} value={lesson.id}>
-                                    {lesson.label}
-                                  </option>
-                                ))}
-                              </select>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Lesson</Label>
+                                  <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    value={quizLessonId}
+                                    onChange={e => setQuizLessonId(e.target.value)}
+                                  >
+                                    <option value="">Select a lesson</option>
+                                    {filteredQuizLessonOptions.map(lesson => (
+                                      <option key={lesson.id} value={lesson.id}>
+                                        {lesson.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
 
-                              <Input
-                                placeholder="Quiz title"
-                                value={quizForm.title}
-                                onChange={e => setQuizForm(prev => ({ ...prev, title: e.target.value }))}
-                              />
-                              <Textarea
-                                placeholder="Quiz description"
-                                value={quizForm.description}
-                                onChange={e => setQuizForm(prev => ({ ...prev, description: e.target.value }))}
-                              />
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Quiz Title</Label>
+                                  <Input
+                                    placeholder="Quiz title"
+                                    value={quizForm.title}
+                                    onChange={e => setQuizForm(prev => ({ ...prev, title: e.target.value }))}
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-600">Quiz Description</Label>
+                                  <Textarea
+                                    placeholder="Quiz description"
+                                    value={quizForm.description}
+                                    onChange={e => setQuizForm(prev => ({ ...prev, description: e.target.value }))}
+                                  />
+                                </div>
+                              </div>
 
                               {quizForm.questions.map((question, questionIndex) => (
-                                <div key={questionIndex} className="rounded-md border p-3 bg-white space-y-2">
-                                  <p className="text-xs font-semibold text-gray-600">Question {questionIndex + 1}</p>
+                                <div key={questionIndex} className="rounded-xl border border-gray-200 p-3 bg-white space-y-2 shadow-sm">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs font-semibold text-gray-600">Question {questionIndex + 1}</p>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-gray-500 hover:text-red-600"
+                                      onClick={() => removeQuizQuestion(questionIndex)}
+                                      aria-label={`Remove question ${questionIndex + 1}`}
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </Button>
+                                  </div>
                                   <Input
                                     placeholder="Question text"
                                     value={question.question_text}
                                     onChange={e => updateQuizQuestion(questionIndex, 'question_text', e.target.value)}
                                   />
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={question.points}
-                                    onChange={e => updateQuizQuestion(questionIndex, 'points', Number(e.target.value))}
-                                  />
+                                  <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-1">
+                                    <Label className="text-xs font-semibold text-gray-800">Points for this question</Label>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={question.points}
+                                      onChange={e => updateQuizQuestion(questionIndex, 'points', Number(e.target.value))}
+                                    />
+                                  </div>
 
                                   {question.variants.map((variant, variantIndex) => (
-                                    <div key={variantIndex} className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-center">
+                                    <div key={variantIndex} className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 items-center">
                                       <Input
                                         placeholder={`Variant ${variantIndex + 1}`}
                                         value={variant.text}
@@ -846,6 +1397,16 @@ export default function InstructorDashboard() {
                                         />
                                         Correct answer
                                       </label>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-gray-500 hover:text-red-600"
+                                        onClick={() => removeQuizVariant(questionIndex, variantIndex)}
+                                        aria-label={`Remove option ${variantIndex + 1}`}
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
                                     </div>
                                   ))}
 
@@ -892,79 +1453,119 @@ export default function InstructorDashboard() {
         <Card>
           <CardHeader><CardTitle>Create New Course</CardTitle></CardHeader>
           <CardContent>
-            <form className="space-y-4 max-w-3xl" onSubmit={handleCreateCourse}>
-              <div className="space-y-2">
-                <Label>Course Title</Label>
-                <Input
-                  placeholder="e.g. Complete React Developer Course"
-                  value={form.title}
-                  onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea
-                  placeholder="Short description of the course"
-                  value={form.desc}
-                  onChange={e => setForm(prev => ({ ...prev, desc: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Base Price</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.base_price}
-                    onChange={e => setForm(prev => ({ ...prev, base_price: Number(e.target.value) }))}
-                    required
-                  />
+            <form className="space-y-4 max-w-5xl" onSubmit={handleCreateCourse}>
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+                <p className="text-sm font-semibold">Course Details</p>
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label>Course Title</Label>
+                    <Input
+                      placeholder="e.g. Complete React Developer Course"
+                      value={form.title}
+                      onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Base Price</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="pl-7"
+                        value={form.base_price}
+                        onChange={e => setForm(prev => ({ ...prev, base_price: Number(e.target.value) }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Discount Price</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        className="pl-7"
+                        value={form.discount_price}
+                        onChange={e => setForm(prev => ({ ...prev, discount_price: Number(e.target.value) }))}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Discount Price</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.discount_price}
-                    onChange={e => setForm(prev => ({ ...prev, discount_price: Number(e.target.value) }))}
-                    required
-                  />
+
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 items-start">
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      placeholder="Short description of the course"
+                      value={form.desc}
+                      onChange={e => setForm(prev => ({ ...prev, desc: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <select
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.category}
+                        onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
+                        required
+                      >
+                        <option value="">Select a category</option>
+                        {categories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="inline-flex items-center gap-1">
+                        <FileText className="w-4 h-4" /> Course Image
+                      </Label>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="create-course-cover-image"
+                          className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                        >
+                          <Upload className="w-4 h-4" /> Upload image
+                        </label>
+                        <input
+                          id="create-course-cover-image"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => setForm(prev => ({ ...prev, cover_img: e.target.files?.[0] ?? null }))}
+                          required
+                        />
+                        <p className="text-xs text-gray-500 truncate">{form.cover_img?.name ?? 'No file selected'}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <select
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={form.category}
-                  onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Course Image</Label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full text-sm"
-                  onChange={e => setForm(prev => ({ ...prev, cover_img: e.target.files?.[0] ?? null }))}
-                  required
-                />
               </div>
 
               {form.units.map((unit, unitIndex) => (
-                <div key={unitIndex} className="border rounded-lg p-4 space-y-3">
-                  <h3 className="font-semibold">Unit {unitIndex + 1}</h3>
+                <div key={unitIndex} className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold">Unit {unitIndex + 1}</h3>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-gray-500 hover:text-red-600"
+                      onClick={() => removeUnit(unitIndex)}
+                      aria-label={`Remove unit ${unitIndex + 1}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                   <div className="space-y-2">
                     <Label>Unit Title</Label>
                     <Input
@@ -983,8 +1584,20 @@ export default function InstructorDashboard() {
                   </div>
 
                   {unit.lessons.map((lesson, lessonIndex) => (
-                    <div key={lessonIndex} className="border rounded-md p-3 space-y-2 bg-gray-50">
-                      <p className="text-sm font-medium">Lesson {lessonIndex + 1}</p>
+                    <div key={lessonIndex} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">Lesson {lessonIndex + 1}</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-gray-500 hover:text-red-600"
+                          onClick={() => removeLesson(unitIndex, lessonIndex)}
+                          aria-label={`Remove lesson ${lessonIndex + 1}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
                       <Input
                         placeholder="Lesson title"
                         value={lesson.title}
@@ -1005,22 +1618,46 @@ export default function InstructorDashboard() {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-xs text-gray-600">Video (optional)</Label>
+                          <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                            <Video className="w-3.5 h-3.5" /> Video (optional)
+                          </Label>
+                          <label
+                            htmlFor={`unit-${unitIndex}-lesson-${lessonIndex}-video`}
+                            className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                          >
+                            <Upload className="w-4 h-4" /> Upload video
+                          </label>
                           <input
+                            id={`unit-${unitIndex}-lesson-${lessonIndex}-video`}
                             type="file"
                             accept="video/*"
-                            className="w-full text-sm"
+                            className="hidden"
                             onChange={e => updateLessonFile(unitIndex, lessonIndex, 'video', e.target.files?.[0] ?? null)}
                           />
+                          <p className="text-xs text-gray-500 truncate">
+                            {lesson.video?.name ?? 'No file selected'}
+                          </p>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs text-gray-600">Presentation (optional)</Label>
+                          <Label className="text-xs text-gray-600 inline-flex items-center gap-1">
+                            <FileText className="w-3.5 h-3.5" /> Presentation (optional)
+                          </Label>
+                          <label
+                            htmlFor={`unit-${unitIndex}-lesson-${lessonIndex}-presentation`}
+                            className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:border-purple-400 hover:text-purple-700 cursor-pointer"
+                          >
+                            <Upload className="w-4 h-4" /> Upload presentation
+                          </label>
                           <input
+                            id={`unit-${unitIndex}-lesson-${lessonIndex}-presentation`}
                             type="file"
                             accept=".pdf,.ppt,.pptx,.key"
-                            className="w-full text-sm"
+                            className="hidden"
                             onChange={e => updateLessonFile(unitIndex, lessonIndex, 'presentation', e.target.files?.[0] ?? null)}
                           />
+                          <p className="text-xs text-gray-500 truncate">
+                            {lesson.presentation?.name ?? 'No file selected'}
+                          </p>
                         </div>
                       </div>
                     </div>
