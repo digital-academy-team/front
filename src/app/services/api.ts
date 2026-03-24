@@ -378,6 +378,7 @@ export interface UpdateCoursePayload {
   base_price: number;
   discount_price: number;
   cover_img?: File | null;
+  units?: CreateUnitPayload[];
 }
 
 export interface CourseProgressApiResponse {
@@ -598,6 +599,37 @@ export const courseApi = {
     formData.append('discount_price', String(data.discount_price));
     if (data.cover_img) {
       formData.append('cover_img', data.cover_img);
+    }
+
+    if (Array.isArray(data.units) && data.units.length > 0) {
+      const unitsPayload = data.units.map((unit, unitIndex) => ({
+        title: unit.title,
+        desc: unit.desc,
+        lessons: unit.lessons.map((lesson, lessonIndex) => {
+          const video = lesson.video ?? null;
+          const presentation = lesson.presentation ?? null;
+
+          const videoKey = `video_${unitIndex}_${lessonIndex}`;
+          const presentationKey = `presentation_${unitIndex}_${lessonIndex}`;
+
+          if (video) {
+            formData.append(videoKey, video);
+          }
+          if (presentation) {
+            formData.append(presentationKey, presentation);
+          }
+
+          return {
+            title: lesson.title,
+            desc: lesson.desc,
+            additional_task: lesson.additional_task ?? '',
+            video: video ? videoKey : null,
+            presentation: presentation ? presentationKey : null,
+          };
+        }),
+      }));
+
+      formData.append('units', JSON.stringify(unitsPayload));
     }
 
     return apiRequest<any>(`${TEACHER_COURSES_ENDPOINT}${courseId}/`, {

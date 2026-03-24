@@ -27,6 +27,20 @@ import { useAuth } from '@/app/store/AuthContext';
 import { courseApi } from '@/app/services/api';
 import { toast } from 'sonner';
 
+function resolveDetailInstructor(detail: any, fallback?: string): string {
+  return (
+    detail?.instructor_name ||
+    detail?.teacher_name ||
+    detail?.teacher_full_name ||
+    detail?.teacher?.full_name ||
+    detail?.teacher?.name ||
+    [detail?.teacher?.first_name, detail?.teacher?.last_name].filter(Boolean).join(' ') ||
+    detail?.instructor ||
+    fallback ||
+    'Digital Academy'
+  );
+}
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -77,7 +91,7 @@ export function CourseDetail() {
           id: detail.id ?? seed?.id ?? id,
           slug: detail.slug ?? seed?.slug ?? id,
           title: detail.title ?? seed?.title ?? 'Untitled course',
-          instructor: seed?.instructor ?? 'Digital Academy',
+          instructor: resolveDetailInstructor(detail, seed?.instructor),
           rating: seed?.rating ?? 4.7,
           reviewCount: seed?.reviewCount ?? 0,
           price: detail.discount_price ?? detail.base_price ?? seed?.price ?? 0,

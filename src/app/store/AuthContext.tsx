@@ -55,6 +55,13 @@ function pickFirstString(...values: Array<unknown>): string {
   return '';
 }
 
+function normalizeDisplayName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('@')) return trimmed.split('@')[0];
+  return trimmed;
+}
+
 function normalizeTitleKey(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
@@ -236,9 +243,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const resolvedEmail = normalized.user?.email ?? (claims?.email as string | undefined) ?? email;
+      const nameFromUser = pickFirstString(
+        (normalized.user as any)?.full_name,
+        (normalized.user as any)?.name,
+        normalized.user?.username,
+      );
+      const nameFromClaims = pickFirstString(
+        claims?.full_name,
+        claims?.name,
+        [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
+        [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+        claims?.preferred_username,
+        claims?.username,
+      );
+      const fallbackName = resolvedEmail ? resolvedEmail.split('@')[0] : 'student';
       const u: User = {
         id: normalized.user.id ?? String(claims?.user_id ?? claims?.id ?? Date.now()),
-        name: normalized.user.username ?? resolvedEmail.split('@')[0],
+        name: normalizeDisplayName(pickFirstString(nameFromUser, nameFromClaims, fallbackName)),
         email: resolvedEmail,
         role,
         enrolledCourseIds: [],
@@ -293,7 +314,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nameFromClaims = pickFirstString(
       claims?.full_name,
       claims?.name,
+      [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
       [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+      claims?.preferred_username,
       claims?.username
     );
     const fallbackName = email ? email.split('@')[0] : 'student';
@@ -303,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const u: User = {
       id: userId,
-      name: pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName),
+      name: normalizeDisplayName(pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName)),
       email,
       role,
       enrolledCourseIds: [],
