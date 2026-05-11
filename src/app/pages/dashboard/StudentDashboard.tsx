@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '@/app/store/AuthContext';
-import { courses, Course } from '@/app/data/courses';
+import { useWishlist } from '@/app/store/WishlistContext';
+import { type Course } from '@/app/data/courses';
 import { courseApi, resolveCourseId } from '@/app/services/api';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Skeleton } from '@/app/components/ui/skeleton';
+import { EmptyState } from '@/app/components/ui/EmptyState';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { BookOpen, Receipt, Settings, Play } from 'lucide-react';
+import { BookOpen, Heart, Receipt, Settings, Play } from 'lucide-react';
+import { CourseCard } from '@/app/components/CourseCard';
 import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
-type Tab = 'learning' | 'history' | 'settings';
+type Tab = 'learning' | 'wishlist' | 'history' | 'settings';
 
 interface SettingsForm {
   name: string;
@@ -44,9 +48,12 @@ function loadCachedPublicCourses(): Course[] {
 
 export default function StudentDashboard() {
   const { user, updateUser, transactions } = useAuth();
+  const { courseIds, toggle } = useWishlist();
   const [activeTab, setActiveTab] = useState<Tab>('learning');
   const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourseView[]>([]);
   const [loadingEnrolledCourses, setLoadingEnrolledCourses] = useState(true);
+  const cachedPublicCourses = loadCachedPublicCourses();
+  const wishlistCourses = cachedPublicCourses.filter(c => courseIds.includes(c.id));
 
   useEffect(() => {
     const loadMyCourses = async () => {
@@ -59,8 +66,7 @@ export default function StudentDashboard() {
 
         const publicCoursesFromApi = publicRes?.data?.map(mapApiCourseToCourse) ?? [];
 
-        const cached = loadCachedPublicCourses();
-        const allSources = [...courses, ...cached];
+        const allSources = [...publicCoursesFromApi, ...loadCachedPublicCourses()];
 
         const list: EnrolledCourseView[] = (myCoursesRes.data ?? []).map((item) => {
           const courseId = resolveCourseId(item.course);
@@ -102,15 +108,16 @@ export default function StudentDashboard() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'learning', label: 'My Learning', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'wishlist', label: 'Wishlist', icon: <Heart className="w-4 h-4" /> },
     { id: 'history', label: 'Purchase History', icon: <Receipt className="w-4 h-4" /> },
     { id: 'settings', label: 'Account Settings', icon: <Settings className="w-4 h-4" /> },
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-8 dark:bg-slate-950 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">Welcome back, {user?.name}!</h1>
-        <p className="text-gray-600">Continue your learning journey</p>
+        <h1 className="text-3xl font-bold dark:text-slate-100">Welcome back, {user?.name}!</h1>
+        <p className="text-gray-600 dark:text-slate-400">Continue your learning journey</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -121,7 +128,7 @@ export default function StudentDashboard() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-colors ${
-                  activeTab === tab.id ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'
+                  activeTab === tab.id ? 'bg-purple-50 text-purple-700 dark:bg-slate-800 dark:text-purple-400' : 'text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800'
                 }`}
               >
                 {tab.icon}
@@ -134,29 +141,42 @@ export default function StudentDashboard() {
         <div className="lg:col-span-3">
           {activeTab === 'learning' && (
             <div>
-              <h2 className="text-xl font-bold mb-4">My Learning ({enrolledCourses.length})</h2>
+              <h2 className="text-xl font-bold mb-4 dark:text-slate-100">My Learning ({enrolledCourses.length})</h2>
               {loadingEnrolledCourses ? (
-                <div className="text-center py-16 bg-gray-50 rounded-xl text-gray-500">Loading my courses...</div>
+                <div className="space-y-4">
+                  {Array.from({ length: 3 }, (_, i) => (
+                    <div key={i} className="flex gap-4 p-4 border rounded-xl">
+                      <Skeleton className="w-24 h-16 rounded-lg flex-shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                        <Skeleton className="h-2 w-full rounded-full" />
+                        <Skeleton className="h-3 w-1/3" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : enrolledCourses.length === 0 ? (
-                <div className="text-center py-16 bg-gray-50 rounded-xl">
-                  <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No courses yet</h3>
-                  <p className="text-gray-600 mb-4">Start learning by enrolling in a course</p>
-                  <Link to="/courses"><Button className="bg-purple-600 hover:bg-purple-700">Browse Courses</Button></Link>
+                <div className="bg-gray-50 dark:bg-slate-900 rounded-xl">
+                  <EmptyState
+                    icon={<BookOpen className="w-16 h-16" />}
+                    title="Enroll in your first course."
+                    action={{ label: 'Browse courses', to: '/courses' }}
+                  />
                 </div>
               ) : (
                 <div className="space-y-4">
                   {enrolledCourses.map(course => (
                     <Card key={course.enrollmentId}>
                       <CardContent className="p-4 flex gap-4">
-                        <img src={course.image} alt={course.title} className="w-24 h-16 object-cover rounded-lg flex-shrink-0" />
+                        <img src={course.image} alt={course.title} loading="lazy" decoding="async" width={96} height={64} className="w-24 h-16 object-cover rounded-lg flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold line-clamp-1">{course.title}</h3>
-                          <p className="text-sm text-gray-600">{course.instructor}</p>
-                          <div className="mt-2 bg-gray-200 rounded-full h-2 w-full">
+                          <p className="text-sm text-gray-600 dark:text-slate-400">{course.instructor}</p>
+                          <div className="mt-2 bg-gray-200 dark:bg-slate-700 rounded-full h-2 w-full">
                             <div className="bg-purple-600 h-2 rounded-full transition-all" style={{ width: `${course.progress}%` }} />
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                             {course.progress}% complete
                             {course.totalLectures > 0
                               ? ` · ${Math.round((course.progress / 100) * course.totalLectures)}/${course.totalLectures} lectures`
@@ -178,29 +198,56 @@ export default function StudentDashboard() {
             </div>
           )}
 
+          {activeTab === 'wishlist' && (
+            <div>
+              <h2 className="text-xl font-bold mb-4 dark:text-slate-100">Wishlist ({wishlistCourses.length})</h2>
+              {wishlistCourses.length === 0 ? (
+                <div className="text-center py-16 bg-gray-50 dark:bg-slate-900 rounded-xl">
+                  <Heart className="w-16 h-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-slate-400 mb-4">Your wishlist is empty</p>
+                  <Link to="/courses"><Button className="bg-purple-600 hover:bg-purple-700">Browse Courses</Button></Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {wishlistCourses.map(course => (
+                    <div key={course.id} className="relative">
+                      <CourseCard course={course} />
+                      <button
+                        onClick={() => toggle(course.id)}
+                        className="absolute top-2 right-2 bg-white dark:bg-slate-800 rounded-full p-1.5 shadow hover:bg-red-50 dark:hover:bg-red-900/30"
+                      >
+                        <Heart className="w-4 h-4 fill-red-500 text-red-500" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'history' && (
             <div>
-              <h2 className="text-xl font-bold mb-4">Purchase History</h2>
+              <h2 className="text-xl font-bold mb-4 dark:text-slate-100">Purchase History</h2>
               {transactions.length === 0 ? (
-                <div className="text-center py-16 bg-gray-50 rounded-xl">
-                  <Receipt className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600">No purchases yet</p>
+                <div className="text-center py-16 bg-gray-50 dark:bg-slate-900 rounded-xl">
+                  <Receipt className="w-16 h-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-slate-400">No purchases yet</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 font-semibold">Date</th>
-                        <th className="text-left py-3 font-semibold">Course</th>
-                        <th className="text-left py-3 font-semibold">Amount</th>
-                        <th className="text-left py-3 font-semibold">Status</th>
+                      <tr className="border-b dark:border-slate-700">
+                        <th className="text-left py-3 font-semibold dark:text-slate-300">Date</th>
+                        <th className="text-left py-3 font-semibold dark:text-slate-300">Course</th>
+                        <th className="text-left py-3 font-semibold dark:text-slate-300">Amount</th>
+                        <th className="text-left py-3 font-semibold dark:text-slate-300">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {transactions.map(tx => (
-                        <tr key={tx.id} className="border-b hover:bg-gray-50">
-                          <td className="py-3 text-gray-600">{new Date(tx.date).toLocaleDateString()}</td>
+                        <tr key={tx.id} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800">
+                          <td className="py-3 text-gray-600 dark:text-slate-400">{new Date(tx.date).toLocaleDateString()}</td>
                           <td className="py-3 max-w-xs truncate">{tx.courseTitle}</td>
                           <td className="py-3 font-medium">${tx.amount.toFixed(2)}</td>
                           <td className="py-3">
@@ -219,7 +266,7 @@ export default function StudentDashboard() {
 
           {activeTab === 'settings' && (
             <div>
-              <h2 className="text-xl font-bold mb-4">Account Settings</h2>
+              <h2 className="text-xl font-bold mb-4 dark:text-slate-100">Account Settings</h2>
               <Card>
                 <CardContent className="p-6">
                   <form onSubmit={handleSubmit(onSettingsSave)} className="space-y-4">
@@ -236,7 +283,7 @@ export default function StudentDashboard() {
                       <textarea
                         {...register('bio')}
                         rows={3}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full border border-gray-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                         placeholder="Tell us about yourself..."
                       />
                     </div>

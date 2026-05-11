@@ -4,7 +4,7 @@ import { Github, Twitter, Linkedin, Instagram } from 'lucide-react';
 
 export function Layout() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-slate-950 dark:text-slate-100">
       <Header />
       <main className="flex-1">
         <Outlet />
@@ -52,7 +52,7 @@ export function Layout() {
                 <ul className="space-y-2.5 text-sm">
                   <li><Link to="/about"   className="text-gray-400 hover:text-white transition-colors">About Us</Link></li>
                   <li><Link to="/contact" className="text-gray-400 hover:text-white transition-colors">Contact Us</Link></li>
-                  <li><Link to="/login"  className="text-gray-400 hover:text-white transition-colors">Teach with Us</Link></li>
+                  <li><Link to="/signup"  className="text-gray-400 hover:text-white transition-colors">Teach with Us</Link></li>
                 </ul>
               </div>
               <div>

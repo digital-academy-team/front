@@ -14,7 +14,7 @@ export interface SectionQuiz {
 
 export type CourseQuizzes = Record<string, SectionQuiz[]>;
 
-export const courseQuizzes: CourseQuizzes = {
+const MOCK_COURSE_QUIZZES: CourseQuizzes = {
   // Course 1: The Complete Web Developer Bootcamp
   '1': [
     {
@@ -310,3 +310,5 @@ export const courseQuizzes: CourseQuizzes = {
     },
   ],
 };
+
+export const courseQuizzes: CourseQuizzes = import.meta.env.DEV ? MOCK_COURSE_QUIZZES : {};

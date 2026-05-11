@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { courses } from '@/app/data/courses';
+import { type Course } from '@/app/data/courses';
 import { courseQuizzes, type SectionQuiz } from '@/app/data/quizzes';
 import { Button } from '@/app/components/ui/button';
-import { courseApi, resolveCourseId, type MyCourseDetailResponse } from '@/app/services/api';
-import { ArrowLeft, CheckCircle, PlayCircle, Trophy, FileText, ClipboardList, ExternalLink } from 'lucide-react';
+import { Skeleton } from '@/app/components/ui/skeleton';
+import { ErrorState } from '@/app/components/ui/ErrorState';
+import { courseApi, resolveCourseId, type MyCourseDetailResponse, type QuizSubmitResultResponseExtended } from '@/app/services/api';
+import { useAuth } from '@/app/store/AuthContext';
+import { ArrowLeft, CheckCircle, PlayCircle, Trophy, FileText, ClipboardList, ExternalLink, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface LectureProgress {
@@ -27,27 +30,33 @@ interface UiQuiz {
   questions: UiQuizQuestion[];
 }
 
+type ApiQuiz = NonNullable<MyCourseDetailResponse['data']['course']['units'][number]['lessons'][number]['quizzes']>[number];
+
+interface CourseSection {
+  section: string;
+  lectures: number;
+  duration: string;
+}
+
 function mapApiQuizToUi(
-  quiz: MyCourseDetailResponse['data']['course']['units'][number]['lessons'][number]['quizzes'][number] | undefined,
+  quiz: ApiQuiz | undefined,
   sectionIndex: number
 ): UiQuiz | null {
   if (!quiz || !Array.isArray(quiz.questions) || quiz.questions.length === 0) return null;
 
-  const questions: UiQuizQuestion[] = quiz.questions
-    .map((question) => {
-      const variants = Array.isArray(question.variants) ? question.variants : [];
-      const correctIndex = variants.findIndex((variant) => variant.is_correct);
-      if (variants.length === 0 || correctIndex < 0) return null;
-
-      return {
-        id: question.id,
-        question: question.question_text,
-        options: variants.map((variant) => variant.text),
-        variantIds: variants.map((variant) => variant.id),
-        correctIndex,
-      };
-    })
-    .filter((question): question is UiQuizQuestion => question !== null);
+  const questions: UiQuizQuestion[] = [];
+  for (const question of quiz.questions) {
+    const variants = Array.isArray(question.variants) ? question.variants : [];
+    const correctIndex = variants.findIndex((variant) => variant.is_correct);
+    if (variants.length === 0 || correctIndex < 0) continue;
+    questions.push({
+      id: question.id,
+      question: question.question_text,
+      options: variants.map((variant) => variant.text),
+      variantIds: variants.map((variant) => variant.id),
+      correctIndex,
+    });
+  }
 
   if (questions.length === 0) return null;
 
@@ -59,14 +68,53 @@ function mapApiQuizToUi(
   };
 }
 
-function QuizIdle({ quiz, storageKey, onStart }: { quiz: UiQuiz; storageKey: string; onStart: () => void }) {
-  let stored: { score: number; total: number; passed: boolean } | null = null;
-  try {
-    const raw = localStorage.getItem(storageKey);
-    stored = raw ? JSON.parse(raw) : null;
-  } catch {
-    stored = null;
+type QuizSubmitData = QuizSubmitResultResponseExtended['data'];
+
+function resultCopy({
+  status,
+  attempt,
+  percent,
+  hasTier,
+  coinEarned,
+}: {
+  status: string;
+  attempt: number;
+  percent: number;
+  hasTier: boolean;
+  coinEarned: number;
+}): string {
+  if (status === 'PASSED' && attempt === 1 && hasTier) {
+    return `You earned ${coinEarned} coin${coinEarned === 1 ? '' : 's'}!`;
   }
+  if (status === 'PASSED' && attempt === 1 && !hasTier) {
+    return 'Great score! Coins unlock once you have a weekly tier — finish more quizzes to climb to Bronze.';
+  }
+  if (attempt === 1 && percent < 70) {
+    return 'No stars this attempt. Pass mark is 70% for stars, 60% for course progress. Try again.';
+  }
+  if (attempt > 1) {
+    return 'Practice mode — coins are first-attempt only, but stars on the leaderboard track your best score per quiz.';
+  }
+  return '';
+}
+
+function StarRow({ filled, total = 3 }: { filled: number; total?: number }) {
+  return (
+    <div className="flex items-center gap-1.5" aria-label={`${filled} out of ${total} stars`} role="img">
+      {Array.from({ length: total }, (_, i) => (
+        <Star
+          key={i}
+          className={`w-7 h-7 transition-all duration-400 ${i < filled ? 'fill-yellow-400 text-yellow-400 scale-100' : 'fill-slate-300 dark:fill-slate-700 text-slate-300 dark:text-slate-700 scale-90'}`}
+          style={{ animationDelay: `${i * 100}ms` }}
+          aria-hidden="true"
+        />
+      ))}
+    </div>
+  );
+}
+
+function QuizIdle({ quiz, storageKey, onStart }: { quiz: UiQuiz; storageKey: string; onStart: () => void }) {
+  const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
   return (
     <div className="max-w-2xl mx-auto">
       <div className="bg-slate-800/70 border border-slate-600 rounded-2xl p-8 text-center shadow-xl">
@@ -141,29 +189,92 @@ function QuizTaking({ quiz, selectedAnswers, submitted, onSelect, onSubmit }: {
   );
 }
 
-function QuizResults({ quiz, selectedAnswers, courseId, sectionIdx, onRetake, onContinue }: {
-  quiz: UiQuiz; selectedAnswers: Record<string, number>; courseId: string; sectionIdx: number;
-  onRetake: () => void; onContinue: () => void;
+function QuizResults({ quiz, selectedAnswers, submitData, hasTier, onRetake, onContinue }: {
+  quiz: UiQuiz;
+  selectedAnswers: Record<string, number>;
+  submitData: QuizSubmitData | null;
+  hasTier: boolean;
+  onRetake: () => void;
+  onContinue: () => void;
 }) {
-  const correct = quiz.questions.filter(q => selectedAnswers[q.id] === q.correctIndex).length;
-  const total = quiz.questions.length;
-  const pct = Math.round((correct / total) * 100);
-  const passed = pct >= 60;
+  const localCorrect = quiz.questions.filter(q => selectedAnswers[q.id] === q.correctIndex).length;
+  const localTotal = quiz.questions.length;
+
+  const correct = submitData?.correct_answers ?? localCorrect;
+  const total = submitData?.total_questions ?? localTotal;
+  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const status = submitData?.status ?? (pct >= 60 ? 'PASSED' : 'FAILED');
+  const passed = status === 'PASSED';
+  const stars = submitData?.stars ?? 0;
+  const attempt = submitData?.attempt ?? 1;
+  const coinEarned = submitData?.coin_earned ?? 0;
+  const totalPoints = submitData?.total ?? '';
+
+  const copy = resultCopy({ status, attempt, percent: pct, hasTier, coinEarned });
+
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className={`rounded-xl p-8 text-center mb-6 ${passed ? 'bg-green-900/30 border border-green-700' : 'bg-yellow-900/30 border border-yellow-700'}`}>
-        <div className="text-5xl mb-3">{passed ? '🎉' : '📚'}</div>
-        <h2 className="text-2xl font-bold mb-1">{passed ? 'Quiz Passed!' : 'Keep Studying!'}</h2>
-        <p className="text-gray-400 mb-4">{quiz.title}</p>
-        <div className="text-5xl font-black mb-2" style={{ color: passed ? '#4ade80' : '#facc15' }}>{pct}%</div>
-        <p className="text-gray-400 text-sm">{correct} out of {total} correct</p>
-        <p className="text-xs text-gray-500 mt-1">{passed ? 'Minimum 60% to pass' : 'You need 60% to pass — review the material and try again'}</p>
+    <div className="max-w-2xl mx-auto" role="status" aria-live="polite">
+      {/* Status banner */}
+      <div className={`rounded-xl p-8 text-center mb-4 ${passed ? 'bg-green-900/30 border border-green-700 dark:bg-green-950/40 dark:border-green-800' : 'bg-amber-900/30 border border-amber-700 dark:bg-amber-950/40 dark:border-amber-800'}`}>
+        {/* Pass / Fail label */}
+        <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide mb-4 ${passed ? 'bg-green-800/60 text-green-300 dark:bg-green-900/60' : 'bg-amber-800/60 text-amber-300 dark:bg-amber-900/60'}`}>
+          <Trophy className="w-4 h-4" />
+          {passed ? 'Passed' : 'Failed'}
+        </div>
+
+        <h2 className="text-2xl font-bold mb-1 text-white">{quiz.title}</h2>
+
+        {/* Score */}
+        <div
+          className="text-5xl font-black mb-1 mt-3"
+          style={{ color: passed ? '#4ade80' : '#fbbf24' }}
+        >
+          {pct}%
+        </div>
+        <p className="text-gray-400 text-sm mb-4">{correct} out of {total} correct</p>
+
+        {/* Stars */}
+        <div className="flex justify-center mb-4">
+          <StarRow filled={stars} />
+        </div>
+
+        {/* Attempt badge */}
+        <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700/70 dark:bg-slate-800/70 text-slate-300 text-xs font-medium border border-slate-600 dark:border-slate-700">
+            Attempt #{attempt}
+          </span>
+          {coinEarned > 0 && (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-yellow-800/50 dark:bg-yellow-900/50 text-yellow-300 text-xs font-semibold border border-yellow-700 dark:border-yellow-800">
+              +{coinEarned} coin{coinEarned === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+
+        {/* Copy message */}
+        {copy && (
+          <p className="text-sm text-slate-300 dark:text-slate-400 max-w-sm mx-auto mb-3 leading-relaxed">
+            {copy}
+          </p>
+        )}
+
+        {/* Points footnote */}
+        {totalPoints && (
+          <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Points: {totalPoints}</p>
+        )}
       </div>
+
+      {/* Actions */}
       <div className="flex gap-3 justify-center">
-        <button onClick={onRetake} className="px-6 py-3 border border-gray-600 text-gray-300 hover:border-white hover:text-white rounded-lg font-medium transition-colors">
+        <button
+          onClick={onRetake}
+          className="px-6 py-3 border border-gray-600 dark:border-slate-600 text-gray-300 dark:text-slate-300 hover:border-white hover:text-white rounded-lg font-medium transition-colors"
+        >
           Retake Quiz
         </button>
-        <button onClick={onContinue} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors">
+        <button
+          onClick={onContinue}
+          className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+        >
           Continue Learning →
         </button>
       </div>
@@ -173,40 +284,31 @@ function QuizResults({ quiz, selectedAnswers, courseId, sectionIdx, onRetake, on
 
 export default function Learn() {
   const { courseId: learningId } = useParams<{ courseId: string }>();
+  const { tier, refreshGamification } = useAuth();
   const [myCourseDetail, setMyCourseDetail] = useState<MyCourseDetailResponse['data'] | null>(null);
   const [loadingMyCourse, setLoadingMyCourse] = useState(true);
   const [resolvedEnrollmentId, setResolvedEnrollmentId] = useState<string | null>(null);
   const cachedCourses = (() => {
     try {
       const raw = localStorage.getItem('da_public_courses_cache');
-      if (!raw) return [] as typeof courses;
+      if (!raw) return [] as Course[];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? (parsed as Course[]) : [];
     } catch {
-      return [] as typeof courses;
+      return [] as Course[];
     }
   })();
   const enrollmentId = myCourseDetail?.id ?? resolvedEnrollmentId ?? learningId;
-  const fallbackCourse = cachedCourses.find(c => c.id === learningId || c.slug === learningId) ?? courses.find(c => c.id === learningId);
+  const fallbackCourse = cachedCourses.find(c => c.id === learningId || c.slug === learningId);
   const resolvedCourseId = myCourseDetail?.course?.id ?? fallbackCourse?.id ?? learningId;
-  const resolvedCourse = cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId) ?? courses.find(c => c.id === resolvedCourseId);
-  const sections = useMemo(
-    () =>
-      myCourseDetail
-        ? myCourseDetail.course.units.map((unit) => ({
-            section: unit.title,
-            lectures: unit.lessons.length,
-            duration: '--',
-          }))
-        : (resolvedCourse?.curriculum ?? []),
-    [myCourseDetail, resolvedCourseId]
-  );
-  const sectionLectureCounts = useMemo(() => sections.map((section) => section.lectures), [sections]);
-  const sectionLectureCountsKey = useMemo(() => sectionLectureCounts.join(','), [sectionLectureCounts]);
-  const totalLecturesInSections = useMemo(
-    () => sectionLectureCounts.reduce((sum, lectureCount) => sum + lectureCount, 0),
-    [sectionLectureCounts]
-  );
+  const resolvedCourse = cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId);
+  const sections: CourseSection[] = myCourseDetail
+    ? myCourseDetail.course.units.map((unit) => ({
+        section: unit.title,
+        lectures: unit.lessons.length,
+        duration: '--',
+      }))
+    : (resolvedCourse?.curriculum ?? []);
   const courseTitle = resolvedCourse?.title ?? 'My Course';
   const [currentSection, setCurrentSection] = useState(0);
   const [currentLecture, setCurrentLecture] = useState(0);
@@ -222,6 +324,7 @@ export default function Learn() {
   const [quizState, setQuizState] = useState<'idle' | 'taking' | 'results'>('idle');
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizSubmitData, setQuizSubmitData] = useState<QuizSubmitData | null>(null);
 
   useEffect(() => {
     const loadMyCourseDetail = async () => {
@@ -277,14 +380,14 @@ export default function Learn() {
         }
 
         const percent = Number(payload?.progress ?? 0);
-        if (!Number.isFinite(percent) || percent <= 0 || sectionLectureCounts.length === 0) return;
+        if (!Number.isFinite(percent) || percent <= 0 || sections.length === 0) return;
 
-        const total = totalLecturesInSections;
+        const total = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
         const estimatedCompleted = Math.min(total, Math.max(0, Math.round((percent / 100) * total)));
 
         const estimatedKeys: string[] = [];
-        for (let sIdx = 0; sIdx < sectionLectureCounts.length; sIdx += 1) {
-          for (let lIdx = 0; lIdx < sectionLectureCounts[sIdx]; lIdx += 1) {
+        for (let sIdx = 0; sIdx < sections.length; sIdx += 1) {
+          for (let lIdx = 0; lIdx < sections[sIdx].lectures; lIdx += 1) {
             if (estimatedKeys.length >= estimatedCompleted) break;
             estimatedKeys.push(`${sIdx}-${lIdx}`);
           }
@@ -298,7 +401,7 @@ export default function Learn() {
     };
 
     loadServerProgress();
-  }, [enrollmentId, resolvedCourseId, sectionLectureCountsKey, totalLecturesInSections]);
+  }, [enrollmentId, resolvedCourseId, sections]);
 
   useEffect(() => {
     if (!sections.length) return;
@@ -312,10 +415,45 @@ export default function Learn() {
     }
   }, [sections, currentSection, currentLecture]);
 
-  if (loadingMyCourse) return <div className="p-8 text-center">Loading course...</div>;
-  if (!sections.length) return <div className="p-8 text-center">Course not found</div>;
+  if (loadingMyCourse) {
+    return (
+      <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col overflow-hidden">
+        {/* Header bar skeleton */}
+        <div className="bg-slate-900/90 px-4 py-3 flex items-center gap-4 border-b border-slate-700">
+          <Skeleton className="h-8 w-20 bg-slate-700" />
+          <Skeleton className="h-4 flex-1 bg-slate-700" />
+          <Skeleton className="h-4 w-32 bg-slate-700" />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar skeleton */}
+          <div className="hidden lg:flex w-80 flex-col border-r border-slate-700 bg-slate-900 p-4 gap-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg bg-slate-700" />
+            ))}
+          </div>
+          {/* Player skeleton */}
+          <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+            <Skeleton className="w-full max-w-3xl aspect-video rounded-xl bg-slate-700" />
+            <Skeleton className="h-4 w-64 bg-slate-700" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const totalLectures = sections.reduce((sum, s) => sum + s.lectures, 0);
+  if (!sections.length) {
+    return (
+      <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center">
+        <ErrorState
+          title="Course not found"
+          description="This course could not be loaded."
+          onRetry={() => window.location.reload()}
+        />
+      </div>
+    );
+  }
+
+  const totalLectures = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
   const completedCount = progress.completedLectures.length;
   const completionPercent = totalLectures > 0 ? Math.round((completedCount / totalLectures) * 100) : 0;
 
@@ -327,7 +465,7 @@ export default function Learn() {
       const nextCompletedLectures = [...progress.completedLectures, lectureKey];
       setProgress({ completedLectures: nextCompletedLectures });
 
-      const total = sections.reduce((sum, s) => sum + s.lectures, 0);
+      const total = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
       const percent = total > 0 ? Math.round((nextCompletedLectures.length / total) * 100) : 0;
       const status = percent >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
 
@@ -503,7 +641,7 @@ export default function Learn() {
                   <p className="text-lg">No quiz is available for this lesson.</p>
                 </div>
               ) : quizState === 'idle' ? (
-                <QuizIdle quiz={sectionQuiz} storageKey={quizStorageKey} onStart={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); }} />
+                <QuizIdle quiz={sectionQuiz} storageKey={quizStorageKey} onStart={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); setQuizSubmitData(null); }} />
               ) : quizState === 'taking' ? (
                 <QuizTaking quiz={sectionQuiz} selectedAnswers={selectedAnswers} submitted={quizSubmitted}
                   onSelect={(qId, optIdx) => !quizSubmitted && setSelectedAnswers(prev => ({ ...prev, [qId]: optIdx }))}
@@ -512,6 +650,7 @@ export default function Learn() {
 
                     let serverCorrectAnswers: number | null = null;
                     let serverPassed: boolean | null = null;
+                    let serverData: QuizSubmitData | null = null;
 
                     if (!sectionQuiz.id.startsWith('fallback-')) {
                       try {
@@ -530,12 +669,14 @@ export default function Learn() {
                           .filter((item): item is { question: string; variant: string } => item !== null);
 
                         const quizResponse = await courseApi.submitUserQuiz(sectionQuiz.id, { answers });
-                        serverCorrectAnswers = Number(quizResponse?.data?.correct_answers);
+                        serverData = quizResponse?.data ?? null;
+                        serverCorrectAnswers = Number(serverData?.correct_answers);
                         if (!Number.isFinite(serverCorrectAnswers)) {
                           serverCorrectAnswers = null;
                         }
-                        serverPassed = quizResponse?.data?.status === 'PASSED';
-                        console.log('Quiz submit response:', quizResponse);
+                        serverPassed = serverData?.status === 'PASSED';
+                        setQuizSubmitData(serverData);
+                        refreshGamification().catch(() => {/* non-critical */});
                       } catch (error) {
                         console.error('Quiz submit failed:', error);
                         toast.error('Quiz results could not be submitted to the server.');
@@ -559,9 +700,14 @@ export default function Learn() {
                     setTimeout(() => setQuizState('results'), 800);
                   }} />
               ) : (
-                <QuizResults quiz={sectionQuiz} selectedAnswers={selectedAnswers} courseId={resolvedCourseId!} sectionIdx={currentSection}
-                  onRetake={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); }}
-                  onContinue={() => { setActiveView('video'); setQuizState('idle'); }} />
+                <QuizResults
+                  quiz={sectionQuiz}
+                  selectedAnswers={selectedAnswers}
+                  submitData={quizSubmitData}
+                  hasTier={tier !== null}
+                  onRetake={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); setQuizSubmitData(null); }}
+                  onContinue={() => { setActiveView('video'); setQuizState('idle'); }}
+                />
               )}
             </div>
           )}

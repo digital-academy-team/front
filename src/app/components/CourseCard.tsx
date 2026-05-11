@@ -1,29 +1,40 @@
 import { Link } from 'react-router';
-import { Star, Clock, Users, ShoppingCart } from 'lucide-react';
+import { Star, Clock, Users, Heart } from 'lucide-react';
 import { Course } from '../data/courses';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
-import { useCart } from '@/app/store/CartContext';
+import { useWishlist } from '@/app/store/WishlistContext';
+import { toast } from 'sonner';
 
 interface CourseCardProps {
   course: Course;
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const { addToCart, removeFromCart, isInCart } = useCart();
-  const inCart = isInCart(course.id);
+  const { has, toggle } = useWishlist();
+  const wishlisted = has(course.id);
+
   const discount = course.originalPrice
     ? Math.round((1 - course.price / course.originalPrice) * 100)
     : null;
 
+  const handleWishlistClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggle(course.id);
+    toast.success(wishlisted ? 'Removed from wishlist' : 'Added to wishlist');
+  };
+
   return (
     <Link to={`/course/${course.slug ?? course.id}`} state={{ course }} className="group block h-full">
-      <Card className="rounded-2xl hover:shadow-lg transition-all duration-300 overflow-hidden h-full flex flex-col group-hover:-translate-y-0.5 border-gray-200 bg-white">
+      <Card className="hover:shadow-xl transition-all duration-300 overflow-hidden h-full flex flex-col group-hover:-translate-y-0.5 border-gray-100 dark:border-slate-800 dark:bg-slate-900">
         {/* Thumbnail */}
-        <div className="relative aspect-video overflow-hidden bg-gray-100 shrink-0">
+        <div className="relative aspect-video overflow-hidden bg-gray-100 dark:bg-slate-800 shrink-0">
           <img
             src={course.image}
             alt={course.title}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
           {course.bestseller && (
@@ -38,54 +49,45 @@ export function CourseCard({ course }: CourseCardProps) {
           )}
           <button
             type="button"
-            onClick={e => {
-              e.preventDefault();
-              if (inCart) {
-                removeFromCart(course.id);
-                return;
-              }
-              addToCart({
-                courseId: course.id,
-                title: course.title,
-                instructor: course.instructor,
-                price: course.price,
-                originalPrice: course.originalPrice,
-                image: course.image,
-              });
-            }}
-            className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 ${inCart ? 'bg-purple-600 text-white' : 'bg-white text-gray-500 hover:text-purple-600 hover:bg-purple-50'}`}
-            aria-label={inCart ? 'Remove from cart' : 'Add to cart'}
+            onClick={handleWishlistClick}
+            aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            aria-pressed={wishlisted}
+            className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+              wishlisted
+                ? 'bg-red-500 text-white opacity-100'
+                : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 translate-y-1 group-hover:translate-y-0'
+            }`}
           >
-            <ShoppingCart className="w-4 h-4" />
+            <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />
           </button>
         </div>
 
-        <CardContent className="p-5 flex flex-col flex-1">
-          <h3 className="font-semibold text-base leading-snug line-clamp-2 mb-1.5 group-hover:text-purple-600 transition-colors">
+        <CardContent className="p-4 flex flex-col flex-1">
+          <h3 className="font-semibold text-base leading-snug line-clamp-2 mb-1.5 group-hover:text-purple-600 dark:text-slate-100 dark:group-hover:text-purple-400 transition-colors">
             {course.title}
           </h3>
-          <p className="text-sm text-gray-500 mb-2 truncate">{course.instructor}</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mb-2 truncate">{course.instructor}</p>
 
           <div className="flex items-center gap-1.5 mb-2">
             <span className="text-sm font-bold text-amber-600">{course.rating.toFixed(1)}</span>
-            <div className="flex items-center">
+            <div className="flex items-center" aria-label={`Rated ${course.rating.toFixed(1)} out of 5`}>
               {[...Array(5)].map((_, i) => (
-                <Star key={i} className={`w-3 h-3 ${i < Math.floor(course.rating) ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'}`} />
+                <Star key={i} className={`w-3 h-3 ${i < Math.floor(course.rating) ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'}`} aria-hidden="true" />
               ))}
             </div>
-            <span className="text-sm text-gray-400">({course.reviewCount.toLocaleString()})</span>
+            <span className="text-sm text-gray-400 dark:text-slate-500">({course.reviewCount.toLocaleString()})</span>
           </div>
 
-          <div className="flex items-center gap-3 text-sm text-gray-400 mb-3">
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{course.duration}</span>
-            <span className="flex items-center gap-1"><Users className="w-3 h-3" />{course.students.toLocaleString()}</span>
+          <div className="flex items-center gap-3 text-sm text-gray-400 dark:text-slate-500 mb-3">
+            <span className="flex items-center gap-1"><Clock className="w-3 h-3" aria-hidden="true" />{course.duration}</span>
+            <span className="flex items-center gap-1"><Users className="w-3 h-3" aria-hidden="true" />{course.students.toLocaleString()}</span>
           </div>
 
-          <div className="mt-auto pt-3 border-t border-gray-50 flex items-center justify-between">
+          <div className="mt-auto pt-3 border-t border-gray-50 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xl font-bold text-gray-900">${course.price}</span>
+              <span className="text-xl font-bold text-gray-900 dark:text-slate-100">${course.price}</span>
               {course.originalPrice && (
-                <span className="text-sm text-gray-400 line-through">${course.originalPrice}</span>
+                <span className="text-sm text-gray-400 dark:text-slate-500 line-through">${course.originalPrice}</span>
               )}
             </div>
             <Badge variant="secondary" className="text-sm">{course.level}</Badge>
