@@ -1,5 +1,5 @@
 // Base URL from env variable, defaults to Django dev server
-const BASE_URL = (import.meta as any).env?.VITE_API_URL ?? 'https://api.digital-academy.live';
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'https://api.digital-academy.live';
 
 const TOKEN_KEY = 'da_access_token';
 const REFRESH_KEY = 'da_refresh_token';
@@ -278,9 +278,6 @@ export interface UserPublicCourseItem {
   instructor?: string;
   instructor_name?: string;
   teacher_name?: string;
-  avg_rating?: number | string | null;
-  comments_count?: number | string | null;
-  students_count?: number | string | null;
 }
 
 export interface UserPublicCourseListResponse {
@@ -293,26 +290,6 @@ export interface UserCoursesQueryParams {
   category?: string[];
   price_min?: number;
   price_max?: number;
-}
-
-export interface CourseCommentItem {
-  id: string;
-  comment: string;
-  likes: number;
-  created_at?: string;
-  user?: {
-    id?: string;
-    username?: string;
-    first_name?: string;
-    last_name?: string;
-    full_name?: string;
-  };
-}
-
-export interface CourseCommentListResponse {
-  success: boolean;
-  status: number;
-  data: CourseCommentItem[];
 }
 
 export interface MyCourseListItem {
@@ -395,13 +372,76 @@ export interface SubmitUserQuizResponse {
   };
 }
 
+// ── Gamification types ─────────────────────────────────────────────────────
+export type Tier = 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+
+export interface ProfileResponse {
+  id: string;
+  avatar: string | null;
+  email: string | null;
+  first_name: string;
+  last_name: string;
+  username: string | null;
+  coin: number;
+  phone_number: string | null;
+}
+
+export interface ProfileUpdatePayload {
+  avatar?: string | null;
+  email?: string | null;
+  first_name?: string;
+  last_name?: string;
+  username?: string | null;
+  phone_number?: string | null;
+}
+
+export interface LeaderboardEntry {
+  username: string;
+  tier: Tier;
+  total_stars: number;
+  position: number | null;
+  reward_coin: number;
+}
+
+export type LeaderboardListResponse = ReturnType<typeof wrapApiData<LeaderboardEntry[]>>;
+export type QuizResultListResponse = ReturnType<typeof wrapApiData<QuizResultEntry[]>>;
+
+export interface QuizResultEntry {
+  id: string;
+  quiz_title: string;
+  correct_answers: number;
+  wrong_answers: number;
+  total_questions: number;
+  status: 'PASSED' | 'FAILED';
+  stars: number;
+  total: string;
+  attempt: number;
+}
+
+export interface QuizSubmitResultResponseExtended {
+  success: boolean;
+  status: number;
+  data: {
+    quiz: string;
+    user: string | null;
+    correct_answers: number;
+    wrong_answers: number;
+    total_questions: number;
+    total: string;
+    status: 'PASSED' | 'FAILED' | string;
+    course_progress: number;
+    stars?: number;
+    attempt?: number;
+    coin_earned?: number;
+  };
+}
+
 export interface UpdateCoursePayload {
   title: string;
   desc: string;
   base_price: number;
   discount_price: number;
   cover_img?: File | null;
-  units?: CreateUnitPayload[];
 }
 
 export interface CourseProgressApiResponse {
@@ -465,17 +505,7 @@ export const authApi = {
         method: 'POST',
         body: JSON.stringify(primaryPayload),
       });
-    } catch (primaryError: any) {
-      const message = String(primaryError?.message ?? '').toLowerCase();
-      const isLikelyFieldMismatch =
-        message.includes('field is required') ||
-        message.includes('this field may not be blank') ||
-        message.includes('required');
-
-      if (!isLikelyFieldMismatch) {
-        throw primaryError;
-      }
-
+    } catch {
       return apiRequest<LoginApiResponse>('/api/users/auth/login/', {
         method: 'POST',
         body: JSON.stringify(fallbackPayload),
@@ -494,51 +524,28 @@ export const authApi = {
       }),
     }),
 
-  requestPasswordReset: async (email: string) => {
-    const payload = JSON.stringify({ email });
-    const endpoints = [
-      '/api/users/auth/forgot-password/',
-      '/api/users/auth/password-reset/',
-      '/api/users/auth/reset-password/',
-    ];
+  register: async (_data: { name: string; email: string; password: string; role: string }) => {
+    throw new Error('Registration endpoint was removed in backend. Use Google login or admin-created accounts.');
+  },
 
-    let lastError: unknown = null;
-
-    for (const endpoint of endpoints) {
-      try {
-        return await apiRequest<{ message?: string }>(endpoint, {
-          method: 'POST',
-          body: payload,
-        });
-      } catch (error: any) {
-        const message = String(error?.message ?? '').toLowerCase();
-        const unavailableEndpoint =
-          message.includes('http 404') ||
-          message.includes('http 405') ||
-          message.includes('method "get" not allowed') ||
-          message.includes('method "post" not allowed');
-
-        if (unavailableEndpoint) {
-          lastError = error;
-          continue;
-        }
-
-        throw error;
-      }
-    }
-
-    if (lastError) {
-      throw new Error('Password reset is currently unavailable. Please contact support.');
-    }
-
-    throw new Error('Password reset is currently unavailable. Please contact support.');
+  verifyCode: async (_email: string, _code: string) => {
+    throw new Error('Verification endpoint was removed in backend.');
   },
 
   logout: async () => undefined,
 
-  getProfile: async () => null,
+  getProfile: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<ProfileResponse>>('/api/users/auth/profile/');
+    return unwrapApiData(response, null as ProfileResponse | null);
+  },
 
-  updateProfile: async (data: Partial<{ name: string; email: string; bio: string; avatar: string }>) => data,
+  updateProfile: async (data: ProfileUpdatePayload) => {
+    const response = await apiRequest<MaybeWrappedResponse<ProfileResponse>>('/api/users/auth/profile/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return unwrapApiData(response, null as ProfileResponse | null);
+  },
 
   changePassword: async (_data: { old_password: string; new_password: string }) => {
     throw new Error('Password change endpoint is not available in current backend auth API.');
@@ -610,33 +617,6 @@ export const courseApi = {
     return apiRequest<any>('/api/teachers/lesson/', { method: 'POST', body: formData });
   },
 
-  listLessons: async () => {
-    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/teachers/lesson/');
-    return wrapApiData(response, [] as any[]);
-  },
-
-  lessonDetail: (lessonId: string) => apiRequest<any>(`/api/teachers/lesson/${lessonId}/`),
-
-  updateLesson: (lessonId: string, data: Partial<CreateLessonApiPayload>) => {
-    const formData = new FormData();
-    if (typeof data.course_unit === 'string') formData.append('course_unit', data.course_unit);
-    if (typeof data.title === 'string') formData.append('title', data.title);
-    if (typeof data.desc === 'string') formData.append('desc', data.desc);
-    if (typeof data.additional_task === 'string') formData.append('additional_task', data.additional_task);
-    if (data.video) formData.append('video', data.video);
-    if (data.presentation) formData.append('presentation', data.presentation);
-
-    return apiRequest<any>(`/api/teachers/lesson/${lessonId}/`, {
-      method: 'PATCH',
-      body: formData,
-    });
-  },
-
-  removeLesson: (lessonId: string) =>
-    apiRequest<void>(`/api/teachers/lesson/${lessonId}/`, {
-      method: 'DELETE',
-    }),
-
   myCourses: async () => {
     return apiRequest<UserCourseListResponse>(TEACHER_COURSES_ENDPOINT);
   },
@@ -651,37 +631,6 @@ export const courseApi = {
       formData.append('cover_img', data.cover_img);
     }
 
-    if (Array.isArray(data.units) && data.units.length > 0) {
-      const unitsPayload = data.units.map((unit, unitIndex) => ({
-        title: unit.title,
-        desc: unit.desc,
-        lessons: unit.lessons.map((lesson, lessonIndex) => {
-          const video = lesson.video ?? null;
-          const presentation = lesson.presentation ?? null;
-
-          const videoKey = `video_${unitIndex}_${lessonIndex}`;
-          const presentationKey = `presentation_${unitIndex}_${lessonIndex}`;
-
-          if (video) {
-            formData.append(videoKey, video);
-          }
-          if (presentation) {
-            formData.append(presentationKey, presentation);
-          }
-
-          return {
-            title: lesson.title,
-            desc: lesson.desc,
-            additional_task: lesson.additional_task ?? '',
-            video: video ? videoKey : null,
-            presentation: presentation ? presentationKey : null,
-          };
-        }),
-      }));
-
-      formData.append('units', JSON.stringify(unitsPayload));
-    }
-
     return apiRequest<any>(`${TEACHER_COURSES_ENDPOINT}${courseId}/`, {
       method: 'PATCH',
       body: formData,
@@ -690,20 +639,16 @@ export const courseApi = {
 
   detail: (id: string) => apiRequest<any>(`${TEACHER_COURSES_ENDPOINT}${id}/`),
 
-  remove: (id: string) =>
-    apiRequest<void>(`${TEACHER_COURSES_ENDPOINT}${id}/`, {
-      method: 'DELETE',
-    }),
-
-  publicDetail: async (slugOrId: string) => {
-    const response = await apiRequest<MaybeWrappedResponse<any>>(`/api/users/courses/${slugOrId}/`);
-    return unwrapApiData(response, null as any);
-  },
+  publicDetail: (slugOrId: string) => apiRequest<any>(`/api/users/courses/${slugOrId}/`),
 
   userCourses: async (params?: UserCoursesQueryParams) => {
     if (!params) {
       const response = await apiRequest<MaybeWrappedResponse<UserPublicCourseItem[]>>('/api/users/courses/');
-      return wrapApiData(response, [] as UserPublicCourseItem[]);
+      const result = wrapApiData(response, [] as UserPublicCourseItem[]);
+      try {
+        localStorage.setItem('da_public_courses_cache', JSON.stringify(result.data));
+      } catch { /* quota exceeded or private browsing — ignore */ }
+      return result;
     }
 
     const query = new URLSearchParams();
@@ -735,11 +680,13 @@ export const courseApi = {
     return wrapApiData(response, null as MyCourseDetailResponse['data'] | null);
   },
 
-  submitUserQuiz: (quizId: string, data: SubmitUserQuizPayload) =>
-    apiRequest<SubmitUserQuizResponse>(`/api/users/quiz/${quizId}/submit/`, {
+  submitUserQuiz: async (quizId: string, data: SubmitUserQuizPayload) => {
+    const response = await apiRequest<MaybeWrappedResponse<QuizSubmitResultResponseExtended['data']>>(`/api/users/quiz/${quizId}/submit/`, {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    });
+    return wrapApiData(response, null as QuizSubmitResultResponseExtended['data'] | null);
+  },
 
   enroll: (id: string) =>
     apiRequest<void>('/api/users/enrolment/', {
@@ -747,10 +694,7 @@ export const courseApi = {
       body: JSON.stringify({ course: id }),
     }),
 
-  reviews: async (id: string) => {
-    const response = await apiRequest<MaybeWrappedResponse<CourseCommentItem[]>>(`/api/users/comments/?course=${id}`);
-    return wrapApiData(response, [] as CourseCommentItem[]);
-  },
+  reviews: (id: string) => apiRequest<any[]>(`/api/users/comments/?course=${id}`),
 
   addReview: (id: string, data: { rating: number; comment: string }) =>
     apiRequest<any>('/api/users/comments/', {
@@ -828,11 +772,6 @@ export const courseApi = {
 
   getQuiz: (_courseId: string, quizId: number) =>
     apiRequest<any>(`/api/users/quiz/${quizId}/`),
-
-  listUserQuizzes: async () => {
-    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/users/quiz/');
-    return wrapApiData(response, [] as any[]);
-  },
 
   submitQuiz: async (_courseId: string, quizId: number, answers: Record<number, number>) => {
     const payload = {
@@ -932,29 +871,35 @@ export const quizApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-
-  list: async () => {
-    const response = await apiRequest<MaybeWrappedResponse<any[]>>('/api/teachers/quiz/');
-    return wrapApiData(response, [] as any[]);
-  },
-
-  detail: (id: string) => apiRequest<any>(`/api/teachers/quiz/${id}/`),
-
-  update: (id: string, data: Partial<CreateQuizApiPayload>) =>
-    apiRequest<any>(`/api/teachers/quiz/${id}/`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-
-  remove: (id: string) =>
-    apiRequest<void>(`/api/teachers/quiz/${id}/`, {
-      method: 'DELETE',
-    }),
 };
 
 export const orderApi = {
   list: async () => {
     const response = await apiRequest<MaybeWrappedResponse<OrderListItem[]>>('/api/users/enrolment/');
     return wrapApiData(response, [] as OrderListItem[]);
+  },
+};
+
+export const leaderboardApi = {
+  list: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<LeaderboardEntry[]>>('/api/users/leaderboard/');
+    return wrapApiData(response, [] as LeaderboardEntry[]);
+  },
+
+  detail: async (id: string) => {
+    const response = await apiRequest<MaybeWrappedResponse<LeaderboardEntry>>(`/api/users/leaderboard/${id}/`);
+    return unwrapApiData(response, null as LeaderboardEntry | null);
+  },
+};
+
+export const quizResultApi = {
+  list: async () => {
+    const response = await apiRequest<MaybeWrappedResponse<QuizResultEntry[]>>('/api/users/quiz-result/');
+    return wrapApiData(response, [] as QuizResultEntry[]);
+  },
+
+  detail: async (id: string) => {
+    const response = await apiRequest<MaybeWrappedResponse<QuizResultEntry>>(`/api/users/quiz-result/${id}/`);
+    return unwrapApiData(response, null as QuizResultEntry | null);
   },
 };

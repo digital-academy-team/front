@@ -1,17 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { User, AuthState, Notification, Transaction } from '@/app/types';
-import { authApi, courseApi, orderApi, resolveCourseId, setTokens, clearTokens, getAccessToken } from '@/app/services/api';
-import { courses, type Course } from '@/app/data/courses';
-import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
+import { authApi, courseApi, orderApi, leaderboardApi, resolveCourseId, setTokens, clearTokens, getAccessToken, Tier } from '@/app/services/api';
 
 interface AuthContextType extends AuthState {
   apiAvailable: boolean;
+  coin: number;
+  tier: Tier | null;
+  leaderboardPosition: number | null;
+  refreshGamification: () => Promise<void>;
   login: (email: string, password: string) => Promise<'student' | 'instructor'>;
   authenticateWithTokens: (
     access: string,
     refresh: string,
     profileHint?: { email?: string; username?: string; fullName?: string; firstName?: string; lastName?: string }
   ) => Promise<'student' | 'instructor'>;
+  register: (name: string, email: string, password: string, role: 'student' | 'instructor') => Promise<'verification_sent'>;
+  verifyRegistration: (name: string, email: string, code: string, role: 'student' | 'instructor') => Promise<'student' | 'instructor'>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   enrollInCourse: (courseId: string, courseTitle: string, amount: number) => Promise<void>;
@@ -26,6 +31,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const STORAGE_KEY = 'digital_academy_auth';
 const NOTIF_KEY = 'digital_academy_notifications';
 const TX_KEY = 'digital_academy_transactions';
+const GAMIFICATION_KEY = 'da_gamification';
+const LAST_TIER_KEY = 'da_last_tier';
 
 function load<T>(key: string, fallback: T): T {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; } catch { return fallback; }
@@ -53,30 +60,6 @@ function pickFirstString(...values: Array<unknown>): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return '';
-}
-
-function normalizeDisplayName(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  if (trimmed.includes('@')) return trimmed.split('@')[0];
-  return trimmed;
-}
-
-function normalizeTitleKey(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toLowerCase() : '';
-}
-
-function parseCurrencyAmount(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === 'string') {
-    const cleaned = value.replace(/[^0-9.-]/g, '');
-    if (!cleaned) return null;
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function normalizeLoginPayload(payload: any): {
@@ -131,9 +114,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>(() => load(TX_KEY, []));
   const [apiAvailable, setApiAvailable] = useState(() => Boolean(getAccessToken()));
 
+  const _savedGamification = load<{ coin: number; tier: Tier | null; leaderboardPosition: number | null }>(
+    GAMIFICATION_KEY,
+    { coin: 0, tier: null, leaderboardPosition: null }
+  );
+  const [coin, setCoin] = useState<number>(_savedGamification.coin);
+  const [tier, setTier] = useState<Tier | null>(_savedGamification.tier);
+  const [leaderboardPosition, setLeaderboardPosition] = useState<number | null>(_savedGamification.leaderboardPosition);
+
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
   useEffect(() => { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifications)); }, [notifications]);
   useEffect(() => { localStorage.setItem(TX_KEY, JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => {
+    localStorage.setItem(GAMIFICATION_KEY, JSON.stringify({ coin, tier, leaderboardPosition }));
+  }, [coin, tier, leaderboardPosition]);
+
+  const refreshGamification = async () => {
+    if (!getAccessToken()) return;
+    try {
+      const profile = await authApi.getProfile();
+      if (profile) setCoin(profile.coin ?? 0);
+      const lb = await leaderboardApi.list();
+      const rows = lb.data ?? [];
+      const myUsername = profile?.username ?? state.user?.name ?? '';
+      const me = rows.find(r => r.username === myUsername) ?? null;
+      setTier(me?.tier ?? null);
+      setLeaderboardPosition(me?.position ?? null);
+      // Tier-up celebration
+      const prevTier = localStorage.getItem(LAST_TIER_KEY) as Tier | null;
+      if (me?.tier && me.tier !== prevTier) {
+        const TIER_ORDER: Tier[] = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'];
+        const prevIdx = prevTier ? TIER_ORDER.indexOf(prevTier) : -1;
+        const newIdx = TIER_ORDER.indexOf(me.tier);
+        // Only celebrate a tier-up when the user already had a previous tier stored.
+        // prevTier === null means first login or post-logout — no toast.
+        if (prevTier !== null && newIdx > prevIdx) {
+          toast.success(`You reached ${me.tier.charAt(0) + me.tier.slice(1).toLowerCase()} tier!`);
+        }
+        localStorage.setItem(LAST_TIER_KEY, me.tier);
+      } else if (!me && prevTier) {
+        // Demoted off leaderboard — silent, just clear cache
+        localStorage.removeItem(LAST_TIER_KEY);
+      }
+    } catch {
+      // Silent — gamification is non-critical, don't break auth flow
+    }
+  };
 
   const seedNotifications = (name: string, dest: string) => {
     setNotifications([
@@ -144,10 +170,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const syncStudentData = async () => {
-    const [myCoursesRes, ordersRes, publicRes] = await Promise.all([
+    const [myCoursesRes, ordersRes] = await Promise.all([
       courseApi.myEnrolledCourses(),
       orderApi.list().catch(() => ({ data: [] as Array<{ course_title: string; total_amount: string | null }> })),
-      courseApi.userCourses().catch(() => null),
     ]);
 
     const enrolledCourseIds = (myCoursesRes.data ?? []).map(item => resolveCourseId(item.course)).filter(Boolean);
@@ -164,55 +189,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (Array.isArray(ordersRes.data) && ordersRes.data.length > 0) {
-      const publicCoursesFromApi = publicRes?.data?.map(mapApiCourseToCourse) ?? [];
-      const cachedCourses: Course[] = load('da_public_courses_cache', []);
-      const allCourses = [...publicCoursesFromApi, ...cachedCourses, ...courses];
-
-      const fallbackAmountByTitle = new Map<string, number>();
-      allCourses.forEach((course) => {
-        const key = normalizeTitleKey(course.title);
-        if (!key || !Number.isFinite(course.price) || course.price <= 0 || fallbackAmountByTitle.has(key)) return;
-        fallbackAmountByTitle.set(key, course.price);
-      });
-
-      setTransactions((prev) => {
-        const previousAmountByTitle = new Map<string, number>();
-        prev.forEach((tx) => {
-          const key = normalizeTitleKey(tx.courseTitle);
-          if (!key || !Number.isFinite(tx.amount) || tx.amount <= 0 || previousAmountByTitle.has(key)) return;
-          previousAmountByTitle.set(key, tx.amount);
-        });
-
-        return ordersRes.data.map((item: any, idx) => {
-          const courseTitle =
-            pickFirstString(item?.course_title, item?.courseTitle, item?.title) || `Course purchase #${idx + 1}`;
-          const key = normalizeTitleKey(courseTitle);
-
-          const amountFromApi =
-            parseCurrencyAmount(item?.total_amount) ??
-            parseCurrencyAmount(item?.amount) ??
-            parseCurrencyAmount(item?.total) ??
-            parseCurrencyAmount(item?.price);
-
-          const amount =
-            (amountFromApi !== null && amountFromApi > 0
-              ? amountFromApi
-              : previousAmountByTitle.get(key) ?? fallbackAmountByTitle.get(key) ?? 0);
-
-          const rawDate = pickFirstString(item?.created_at, item?.createdAt, item?.date, item?.ordered_at, item?.orderedAt);
-          const normalizedDate = rawDate && !Number.isNaN(Date.parse(rawDate)) ? rawDate : new Date().toISOString();
-          const statusRaw = pickFirstString(item?.status, item?.payment_status).toLowerCase();
-          const status: Transaction['status'] = statusRaw.includes('refund') ? 'refunded' : 'completed';
-
-          return {
-            id: String(item?.id ?? `order-${idx}-${courseTitle}`),
-            date: normalizedDate,
-            courseTitle,
-            amount,
-            status,
-          };
-        });
-      });
+      setTransactions(
+        ordersRes.data.map((item, idx) => ({
+          id: `order-${idx}-${item.course_title}`,
+          date: new Date().toISOString(),
+          courseTitle: item.course_title,
+          amount: Number(item.total_amount ?? 0),
+          status: 'completed',
+        }))
+      );
     }
   };
 
@@ -223,6 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     syncStudentData().catch(() => {
       // Keep persisted local auth state if student sync fails.
     });
+    refreshGamification();
   }, [state.isAuthenticated, state.user?.id, state.user?.role]);
 
   const login = async (email: string, password: string) => {
@@ -243,23 +229,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const resolvedEmail = normalized.user?.email ?? (claims?.email as string | undefined) ?? email;
-      const nameFromUser = pickFirstString(
-        (normalized.user as any)?.full_name,
-        (normalized.user as any)?.name,
-        normalized.user?.username,
-      );
-      const nameFromClaims = pickFirstString(
-        claims?.full_name,
-        claims?.name,
-        [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
-        [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
-        claims?.preferred_username,
-        claims?.username,
-      );
-      const fallbackName = resolvedEmail ? resolvedEmail.split('@')[0] : 'student';
       const u: User = {
         id: normalized.user.id ?? String(claims?.user_id ?? claims?.id ?? Date.now()),
-        name: normalizeDisplayName(pickFirstString(nameFromUser, nameFromClaims, fallbackName)),
+        name: normalized.user.username ?? resolvedEmail.split('@')[0],
         email: resolvedEmail,
         role,
         enrolledCourseIds: [],
@@ -270,26 +242,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setApiAvailable(true);
       if (role === 'student') {
         await syncStudentData();
+        await refreshGamification();
       }
       return role;
     } catch (err: any) {
       setApiAvailable(false);
-      const rawMessage = String(err?.message ?? 'API error');
-      const normalized = rawMessage.toLowerCase();
-      const accountNotFound =
-        normalized.includes('no active account') ||
-        normalized.includes('user not found') ||
-        normalized.includes('not found') ||
-        normalized.includes('does not exist');
-      const payloadValidation =
-        normalized.includes('field is required') ||
-        normalized.includes('this field may not be blank');
-
-      if (accountNotFound || payloadValidation) {
-        throw new Error("This account doesn't exist. Please sign up.");
-      }
-
-      throw new Error(rawMessage);
+      throw new Error(err?.message ?? 'API error');
     }
   };
 
@@ -314,9 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nameFromClaims = pickFirstString(
       claims?.full_name,
       claims?.name,
-      [claims?.given_name, claims?.family_name].filter(Boolean).join(' '),
       [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
-      claims?.preferred_username,
       claims?.username
     );
     const fallbackName = email ? email.split('@')[0] : 'student';
@@ -326,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const u: User = {
       id: userId,
-      name: normalizeDisplayName(pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName)),
+      name: pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName),
       email,
       role,
       enrolledCourseIds: [],
@@ -339,9 +295,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (role === 'student') {
       await syncStudentData().catch(() => {});
+      await refreshGamification();
     }
 
     return role;
+  };
+
+  const register = async (name: string, email: string, password: string, role: 'student' | 'instructor'): Promise<'verification_sent'> => {
+    setApiAvailable(false);
+    await authApi.register({ name, email, password, role });
+    return 'verification_sent';
+  };
+
+  const verifyRegistration = async (_name: string, email: string, code: string, _role: 'student' | 'instructor'): Promise<'student' | 'instructor'> => {
+    setApiAvailable(false);
+    await authApi.verifyCode(email, code);
+    return 'student';
   };
 
   const logout = () => {
@@ -350,6 +319,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, isAuthenticated: false });
     setNotifications([]);
     setTransactions([]);
+    setCoin(0);
+    setTier(null);
+    setLeaderboardPosition(null);
+    localStorage.removeItem(GAMIFICATION_KEY);
+    localStorage.removeItem(LAST_TIER_KEY);
   };
 
   const updateUser = (updates: Partial<User>) => {
@@ -357,7 +331,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...state.user, ...updates };
     setState(prev => ({ ...prev, user: updated }));
     if (apiAvailable) {
-      authApi.updateProfile({ name: updates.name, email: updates.email, bio: updates.bio, avatar: updates.avatar }).catch(() => {});
+      authApi.updateProfile({
+        first_name: updates.name,
+        email: updates.email,
+        avatar: updates.avatar ?? null,
+      }).catch(() => {});
     }
     const users: User[] = load('da_users', []);
     const idx = users.findIndex(u => u.id === state.user!.id);
@@ -382,7 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (idx >= 0) { users[idx] = updated; localStorage.setItem('da_users', JSON.stringify(users)); }
     const tx: Transaction = { id: crypto.randomUUID(), date: new Date().toISOString(), courseTitle, amount, status: 'completed' };
     setTransactions(prev => [tx, ...prev]);
-    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/profile' }, ...prev]);
+    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/dashboard' }, ...prev]);
 
     if (apiAvailable) {
       syncStudentData().catch(() => {
@@ -395,7 +373,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const markAllNotificationsRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
 
   return (
-    <AuthContext.Provider value={{ ...state, apiAvailable, login, authenticateWithTokens, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
+    <AuthContext.Provider value={{ ...state, apiAvailable, coin, tier, leaderboardPosition, refreshGamification, login, authenticateWithTokens, register, verifyRegistration, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
       {children}
     </AuthContext.Provider>
   );

@@ -11,6 +11,9 @@
     <title>Digital Academy</title>
   </head>
   <body>
+    <script>
+(function(){try{var t=localStorage.getItem('da_theme');var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

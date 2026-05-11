@@ -2,7 +2,7 @@
 dist/
 build/
 node_modules/
-
+back
 
 # OS-generated files
 .DS_Store
