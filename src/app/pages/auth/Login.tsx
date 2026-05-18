@@ -96,7 +96,7 @@ export default function Login() {
                   aria-describedby={errors.password ? 'password-error' : capsLockOn ? 'caps-lock-warning' : undefined}
                   onKeyDown={handlePasswordKey}
                   onKeyUp={handlePasswordKey}
-                  {...register('password', { required: 'Password is required', minLength: { value: 6, message: 'Min 6 characters' } })}
+                  {...register('password', { required: 'Password is required' })}
                 />
                 <button
                   type="button"
