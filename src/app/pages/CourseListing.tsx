@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
 import { categories } from '../data/courses';
-import { Button } from '../components/ui/button';
 import { FilterSidebar } from '../components/FilterSidebar';
 import { X, BookOpen } from 'lucide-react';
 import { categoryApi, courseApi } from '@/app/services/api';
@@ -20,16 +19,27 @@ interface CourseCategoryFilter {
 
 const DEFAULT_PRICE_BOUNDS: [number, number] = [0, 150];
 
+function clampPriceRange(range: [number, number], bounds: [number, number]): [number, number] {
+  const lower = Math.min(range[0], range[1]);
+  const upper = Math.max(range[0], range[1]);
+  const minBound = Math.min(bounds[0], bounds[1]);
+  const maxBound = Math.max(bounds[0], bounds[1]);
+  const clampedMin = Math.min(Math.max(lower, minBound), maxBound);
+  const clampedMax = Math.min(Math.max(upper, minBound), maxBound);
+
+  return clampedMin <= clampedMax ? [clampedMin, clampedMax] : [minBound, maxBound];
+}
+
 export function CourseListing() {
   const [searchParams] = useSearchParams();
   const categoryFilter = searchParams.get('category');
-  const defaultPriceBounds = DEFAULT_PRICE_BOUNDS;
+
+  const [priceBounds, setPriceBounds] = useState<[number, number]>(DEFAULT_PRICE_BOUNDS);
+  const [priceRange, setPriceRange] = useState<[number, number] | null>(null);
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     categoryFilter ? [categoryFilter] : []
   );
-  const [priceBounds, setPriceBounds] = useState<[number, number]>(defaultPriceBounds);
-  const [priceRange, setPriceRange] = useState<[number, number]>(defaultPriceBounds);
   const [apiCourses, setApiCourses] = useState<ReturnType<typeof mapApiCourseToCourse>[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -70,12 +80,12 @@ export function CourseListing() {
     setIsLoading(true);
     setHasError(false);
 
+    const query: { category?: string[] } = {
+      category: selectedCategories.length ? selectedCategories : undefined,
+    };
+
     courseApi
-      .userCourses({
-        category: selectedCategories.length ? selectedCategories : undefined,
-        price_min: priceRange[0] > priceBounds[0] ? priceRange[0] : undefined,
-        price_max: priceRange[1] < priceBounds[1] ? priceRange[1] : undefined,
-      })
+      .userCourses(query)
       .then((response) => {
         if (!active) return;
         if (!Array.isArray(response?.data)) {
@@ -94,14 +104,6 @@ export function CourseListing() {
           const nextMax = Math.ceil(Math.max(...prices));
           const bounds: [number, number] = [nextMin, Math.max(nextMax, nextMin + 1)];
           setPriceBounds(bounds);
-          setPriceRange((prev) => {
-            const isInitial = prev[0] === defaultPriceBounds[0] && prev[1] === defaultPriceBounds[1];
-            if (isInitial) return bounds;
-            const clampedMin = Math.max(bounds[0], prev[0]);
-            const clampedMax = Math.min(bounds[1], prev[1]);
-            if (clampedMin > clampedMax) return bounds;
-            return [clampedMin, clampedMax];
-          });
         }
 
         localStorage.setItem('da_public_courses_cache', JSON.stringify(mappedCourses));
@@ -114,7 +116,7 @@ export function CourseListing() {
       });
 
     return () => { active = false; };
-  }, [selectedCategories, priceRange, priceBounds]);
+  }, [selectedCategories]);
 
   useEffect(() => {
     const cleanup = fetchCourses();
@@ -126,17 +128,21 @@ export function CourseListing() {
 
   const resetFilters = () => {
     setSelectedCategories([]);
-    setPriceRange(priceBounds);
+    setPriceRange(null);
   };
 
+  const activePriceRange = priceRange ? clampPriceRange(priceRange, priceBounds) : null;
+
   const filteredCourses = apiCourses.filter((course) => {
+    if (!activePriceRange) return true;
     const price = Number(course.price);
     if (!Number.isFinite(price)) return true;
-    return price >= priceRange[0] && price <= priceRange[1];
+    return price >= activePriceRange[0] && price <= activePriceRange[1];
   });
 
   const activeCategoryNames = selectedCategories.map(id => availableCategories.find(c => c.id === id)?.name ?? id);
-  const hasActiveFilters = selectedCategories.length > 0 || priceRange[0] > priceBounds[0] || priceRange[1] < priceBounds[1];
+  const isPriceFiltered = !!activePriceRange && (activePriceRange[0] > priceBounds[0] || activePriceRange[1] < priceBounds[1]);
+  const hasActiveFilters = selectedCategories.length > 0 || isPriceFiltered;
 
   return (
     <div className="min-h-screen bg-gray-50/40 dark:bg-slate-950">
@@ -162,10 +168,10 @@ export function CourseListing() {
                   </button>
                 </span>
               ))}
-              {(priceRange[0] > priceBounds[0] || priceRange[1] < priceBounds[1]) && (
+              {isPriceFiltered && activePriceRange && (
                 <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  ${priceRange[0]}–${priceRange[1]}
-                  <button onClick={() => setPriceRange(priceBounds)}>
+                  ${activePriceRange[0]}–${activePriceRange[1]}
+                  <button onClick={() => setPriceRange(null)}>
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -183,7 +189,7 @@ export function CourseListing() {
           <FilterSidebar
             categories={availableCategories}
             selectedCategories={selectedCategories}
-            priceRange={priceRange}
+            priceRange={priceRange ?? priceBounds}
             minPrice={priceBounds[0]}
             maxPrice={priceBounds[1]}
             onToggleCategory={toggleCategory}
@@ -203,7 +209,6 @@ export function CourseListing() {
                 <p className="text-sm text-gray-600 dark:text-slate-300 font-medium">
                   <span className="text-gray-900 dark:text-slate-100 font-bold">{filteredCourses.length}</span> courses found
                 </p>
-                <span className="text-xs text-gray-500 dark:text-slate-400">Filtered by backend</span>
               </div>
             )}
 

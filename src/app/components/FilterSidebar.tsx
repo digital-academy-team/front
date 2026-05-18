@@ -27,16 +27,16 @@ function CategoryIcon({ iconKey }: { iconKey: CategoryIconKey }) {
 interface FilterSidebarProps {
   categories: CourseCategoryFilter[];
   selectedCategories: string[];
-  priceRange: number[];
-  minPrice: number;
-  maxPrice: number;
+  priceRange?: number[];
+  minPrice?: number;
+  maxPrice?: number;
   onToggleCategory: (categoryId: string) => void;
-  onPriceRangeChange: (value: number[]) => void;
+  onPriceRangeChange?: (value: number[]) => void;
   onReset: () => void;
 }
 
-const activeCount = (cats: string[], price: number[], minPrice: number, maxPrice: number) =>
-  cats.length + (price[0] > minPrice || price[1] < maxPrice ? 1 : 0);
+const activeCount = (cats: string[], price?: number[], minPrice?: number, maxPrice?: number) =>
+  cats.length + (price && minPrice !== undefined && maxPrice !== undefined && (price[0] > minPrice || price[1] < maxPrice) ? 1 : 0);
 
 export function FilterSidebar({
   categories, selectedCategories, priceRange, minPrice, maxPrice,
@@ -91,20 +91,21 @@ export function FilterSidebar({
               </div>
             </div>
 
-            {/* Price Range */}
-            <div className="border-t border-gray-100 dark:border-slate-800 pt-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-4">Price Range</h3>
-              <Slider
-                min={minPrice} max={maxPrice} step={1}
-                value={priceRange}
-                onValueChange={onPriceRangeChange}
-                className="mb-3"
-              />
-              <div className="flex justify-between">
-                <span className="text-xs font-semibold bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-md text-gray-700 dark:text-slate-200">${priceRange[0]}</span>
-                <span className="text-xs font-semibold bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-md text-gray-700 dark:text-slate-200">${priceRange[1]}</span>
+            {priceRange && minPrice !== undefined && maxPrice !== undefined && onPriceRangeChange && (
+              <div className="border-t border-gray-100 dark:border-slate-800 pt-5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-4">Price Range</h3>
+                <Slider
+                  min={minPrice} max={maxPrice} step={1}
+                  value={priceRange}
+                  onValueChange={onPriceRangeChange}
+                  className="mb-3"
+                />
+                <div className="flex justify-between">
+                  <span className="text-xs font-semibold bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-md text-gray-700 dark:text-slate-200">${priceRange[0]}</span>
+                  <span className="text-xs font-semibold bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-md text-gray-700 dark:text-slate-200">${priceRange[1]}</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
