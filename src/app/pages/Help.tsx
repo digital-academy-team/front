@@ -87,15 +87,15 @@ const faqSections: FAQSection[] = [
     items: [
       {
         question: 'How do I purchase a course?',
-        answer: 'Add the course to your cart by clicking "Add to Cart" on the course detail page. Go to your cart, review your order, and click "Proceed to Checkout". Fill in your payment details and complete the purchase. The course will instantly appear in your "My Courses".',
+        answer: 'Add the course to your cart by clicking "Add to Cart" on the course detail page. Go to your cart, review your order, and click "Proceed to Checkout". Choose one of your saved payment methods, or add a new card in your Profile payment settings, then complete the purchase. The course will instantly appear in your "My Courses".',
       },
       {
         question: 'What payment methods are accepted?',
-        answer: 'Currently we support credit and debit cards. Payment processing is handled securely.',
+        answer: 'You can save one or more debit cards in your Profile and select one at checkout. Payment processing is handled securely.',
       },
       {
         question: 'Where can I see my purchase history?',
-        answer: 'Go to your Profile page and click the "Payments" tab. You\'ll see a full history of all your course purchases with dates, amounts, and statuses.',
+        answer: 'Go to your Profile page and click the "Payments" tab. You\'ll see your saved cards and a full history of all your course purchases with dates, amounts, and statuses.',
       },
       {
         question: 'Can I get a refund?',

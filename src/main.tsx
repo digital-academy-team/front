@@ -4,6 +4,7 @@ import './styles/index.css'
 import App from './app/App'
 import { AuthProvider } from './app/store/AuthContext'
 import { CartProvider } from './app/store/CartContext'
+import { PaymentMethodsProvider } from './app/store/PaymentMethodsContext'
 import { WishlistProvider } from './app/store/WishlistContext'
 import { ThemeProvider } from './app/store/ThemeContext'
 import { Toaster } from 'sonner'
@@ -13,16 +14,18 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <AuthProvider>
         <CartProvider>
-          <WishlistProvider>
-            <App />
-            <Toaster
-              position="top-right"
-              richColors
-              closeButton
-              duration={3500}
-              expand={false}
-            />
-          </WishlistProvider>
+          <PaymentMethodsProvider>
+            <WishlistProvider>
+              <App />
+              <Toaster
+                position="top-right"
+                richColors
+                closeButton
+                duration={3500}
+                expand={false}
+              />
+            </WishlistProvider>
+          </PaymentMethodsProvider>
         </CartProvider>
       </AuthProvider>
     </ThemeProvider>

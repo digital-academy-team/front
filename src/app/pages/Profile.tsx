@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '@/app/store/AuthContext';
+import { usePaymentMethods } from '@/app/store/PaymentMethodsContext';
 import { toast } from 'sonner';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -8,11 +9,12 @@ import { Label } from '@/app/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { EmptyState } from '@/app/components/ui/EmptyState';
-import { User, Lock, Bell, Eye, EyeOff, Camera, BookOpen, Receipt, Award, Play, Coins, Trophy, ClipboardList } from 'lucide-react';
+import { User, Lock, Bell, Eye, EyeOff, Camera, BookOpen, Receipt, Award, Play, Coins, Trophy, ClipboardList, Plus } from 'lucide-react';
 import { authApi, courseApi, resolveCourseId, type Tier, type ProfileResponse } from '@/app/services/api';
 import { type Course } from '@/app/data/courses';
 import { Link, useSearchParams } from 'react-router';
 import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
+import { PaymentMethodPicker } from '@/app/components/PaymentMethodPicker';
 
 // ── Tier chip (mirrors Leaderboard.tsx) ───────────────────────────────────────
 
@@ -56,6 +58,13 @@ type Tab = 'profile' | 'courses' | 'payments' | 'credentials' | 'security' | 'no
 
 interface ProfileForm { name: string; email: string; bio: string; }
 interface PasswordForm { currentPassword: string; newPassword: string; confirmPassword: string; }
+interface PaymentMethodForm {
+  nickname: string;
+  holderName: string;
+  cardNumber: string;
+  expiry: string;
+  cvv: string;
+}
 
 interface ProfileEnrolledCourse {
   enrollmentId: string;
@@ -83,6 +92,7 @@ function loadCachedPublicCourses(): Course[] {
 
 export default function Profile() {
   const { user, updateUser, apiAvailable, transactions, coin, tier, leaderboardPosition, refreshGamification } = useAuth();
+  const { methods: paymentMethods, selectedMethodId, selectMethod, addMethod, removeMethod } = usePaymentMethods();
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get('tab') as Tab) || 'profile';
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
@@ -101,9 +111,13 @@ export default function Profile() {
   const [usernameInitial, setUsernameInitial] = useState('');
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [usernameSaving, setUsernameSaving] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
   const profileForm = useForm<ProfileForm>({ defaultValues: { name: user?.name || '', email: user?.email || '', bio: user?.bio || '' } });
   const passwordForm = useForm<PasswordForm>();
+  const paymentForm = useForm<PaymentMethodForm>({
+    defaultValues: { nickname: '', holderName: '', cardNumber: '', expiry: '', cvv: '' },
+  });
 
   useEffect(() => {
     profileForm.reset({
@@ -150,8 +164,9 @@ export default function Profile() {
         const publicCoursesFromApi = publicRes?.data?.map(mapApiCourseToCourse) ?? [];
 
         const allSources = [...publicCoursesFromApi, ...loadCachedPublicCourses()];
+        const localEnrolledIds = user?.enrolledCourseIds ?? [];
 
-        const list: ProfileEnrolledCourse[] = (myCoursesRes.data ?? []).map((item) => {
+        const apiList: ProfileEnrolledCourse[] = (myCoursesRes.data ?? []).map((item) => {
           const courseId = resolveCourseId(item.course);
           const fromPublicApi = publicCoursesFromApi.find((c) => c.id === courseId || c.slug === courseId);
           const fromLocal = allSources.find((c) => c.id === courseId || c.slug === courseId);
@@ -168,16 +183,69 @@ export default function Profile() {
           };
         });
 
-        setEnrolledCourses(list);
+        const fallbackList: ProfileEnrolledCourse[] = apiList.length > 0 || localEnrolledIds.length === 0
+          ? apiList
+          : localEnrolledIds.map((courseId) => {
+              const fromPublicApi = publicCoursesFromApi.find((c) => c.id === courseId || c.slug === courseId);
+              const fromLocal = allSources.find((c) => c.id === courseId || c.slug === courseId);
+              const storedProgress = (() => {
+                try {
+                  const raw = localStorage.getItem(`progress_${courseId}`);
+                  if (!raw) return 0;
+                  const parsed = JSON.parse(raw) as { completedLectures?: string[] };
+                  const total = (fromPublicApi ?? fromLocal)?.curriculum?.reduce((s, sec) => s + sec.lectures, 0) ?? 0;
+                  if (!total) return 0;
+                  return Math.min(100, Math.max(0, Math.round(((parsed.completedLectures?.length ?? 0) / total) * 100)));
+                } catch {
+                  return 0;
+                }
+              })();
+
+              return {
+                enrollmentId: courseId,
+                courseId,
+                progress: storedProgress,
+                status: storedProgress >= 100 ? 'COMPLETED' : 'ENROLLED',
+                title: fromPublicApi?.title ?? fromLocal?.title ?? 'Untitled course',
+                instructor: fromPublicApi?.instructor ?? fromLocal?.instructor ?? 'Digital Academy',
+                image: fromPublicApi?.image ?? fromLocal?.image ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
+                totalLectures: (fromPublicApi ?? fromLocal)?.curriculum?.reduce((s, sec) => s + sec.lectures, 0) ?? 0,
+              };
+            });
+
+        setEnrolledCourses(fallbackList);
       } catch {
-        setEnrolledCourses([]);
+        const localEnrolledIds = user?.enrolledCourseIds ?? [];
+        setEnrolledCourses(localEnrolledIds.map((courseId) => {
+          const storedProgress = (() => {
+            try {
+              const raw = localStorage.getItem(`progress_${courseId}`);
+              if (!raw) return 0;
+              const parsed = JSON.parse(raw) as { completedLectures?: string[] };
+              return Math.min(100, Math.max(0, (parsed.completedLectures?.length ?? 0) * 10));
+            } catch {
+              return 0;
+            }
+          })();
+
+          return {
+            enrollmentId: courseId,
+            courseId,
+            progress: storedProgress,
+            status: storedProgress >= 100 ? 'COMPLETED' : 'ENROLLED',
+            title: 'Untitled course',
+            instructor: 'Digital Academy',
+            image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
+            totalLectures: 0,
+          };
+        }));
       } finally {
         setLoadingEnrolledCourses(false);
       }
     };
 
     loadMyCourses();
-  }, []);
+  }, [user?.enrolledCourseIds]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -237,6 +305,13 @@ export default function Profile() {
     { id: 'security', label: 'Security', icon: <Lock className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
   ];
+
+  const onPaymentMethodSave = (data: PaymentMethodForm) => {
+    addMethod(data);
+    paymentForm.reset();
+    setShowPaymentForm(false);
+    toast.success('Payment method saved!');
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 dark:bg-slate-950 min-h-screen">
@@ -483,14 +558,14 @@ export default function Profile() {
                             </p>
                           </div>
                           <div className="flex-shrink-0 flex flex-col gap-2">
-                            <Link to={`/learn/${course.enrollmentId}`}>
+                            <Link to={`/learn/${course.courseId}`}>
                               <Button size="sm" className="bg-purple-600 hover:bg-purple-700 w-full">
                                 <Play className="w-3 h-3 mr-1" />
                                 {pct > 0 ? 'Continue' : 'Start'}
                               </Button>
                             </Link>
                             {pct === 100 && (
-                              <Link to={`/certificate/${course.enrollmentId}`}>
+                              <Link to={`/certificate/${course.courseId}`}>
                                 <Button size="sm" variant="outline" className="w-full text-xs border-green-500 text-green-700 hover:bg-green-50">
                                   <Award className="w-3 h-3 mr-1" />
                                   Certificate
@@ -509,57 +584,196 @@ export default function Profile() {
 
           {/* PAYMENTS TAB */}
           {activeTab === 'payments' && (
-            <div>
-              <h2 className="text-xl font-bold mb-4">Payment History</h2>
-              {transactions.length === 0 ? (
-                <div className="bg-gray-50 dark:bg-slate-900 rounded-xl">
-                  <EmptyState
-                    icon={<Receipt className="w-16 h-16" />}
-                    title="No purchases yet."
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Cards</CardTitle>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Add debit cards once and use them at checkout.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={showPaymentForm ? 'outline' : 'default'}
+                    className={showPaymentForm ? '' : 'bg-purple-600 hover:bg-purple-700'}
+                    onClick={() => setShowPaymentForm((prev) => !prev)}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add debit card
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {showPaymentForm && (
+                    <form onSubmit={paymentForm.handleSubmit(onPaymentMethodSave)} className="grid grid-cols-1 md:grid-cols-2 gap-4" noValidate>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="payment-nickname">Card name</Label>
+                        <Input
+                          id="payment-nickname"
+                          placeholder="My Visa card"
+                          aria-invalid={paymentForm.formState.errors.nickname ? 'true' : 'false'}
+                          aria-describedby={paymentForm.formState.errors.nickname ? 'payment-nickname-error' : undefined}
+                          {...paymentForm.register('nickname', { required: 'Card name is required' })}
+                        />
+                        {paymentForm.formState.errors.nickname && (
+                          <p id="payment-nickname-error" className="text-sm text-red-500" role="alert">
+                            {paymentForm.formState.errors.nickname.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="payment-holder">Cardholder full name</Label>
+                        <Input
+                          id="payment-holder"
+                          placeholder="John Doe"
+                          aria-invalid={paymentForm.formState.errors.holderName ? 'true' : 'false'}
+                          aria-describedby={paymentForm.formState.errors.holderName ? 'payment-holder-error' : undefined}
+                          {...paymentForm.register('holderName', { required: 'Cardholder name is required' })}
+                        />
+                        {paymentForm.formState.errors.holderName && (
+                          <p id="payment-holder-error" className="text-sm text-red-500" role="alert">
+                            {paymentForm.formState.errors.holderName.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="payment-card-number">Card number</Label>
+                        <Input
+                          id="payment-card-number"
+                          inputMode="numeric"
+                          placeholder="1234 5678 9012 3456"
+                          aria-invalid={paymentForm.formState.errors.cardNumber ? 'true' : 'false'}
+                          aria-describedby={paymentForm.formState.errors.cardNumber ? 'payment-card-number-error' : undefined}
+                          {...paymentForm.register('cardNumber', {
+                            required: 'Card number is required',
+                            validate: (value) => value.replace(/\D/g, '').length >= 12 || 'Enter a valid card number',
+                          })}
+                        />
+                        {paymentForm.formState.errors.cardNumber && (
+                          <p id="payment-card-number-error" className="text-sm text-red-500" role="alert">
+                            {paymentForm.formState.errors.cardNumber.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="payment-expiry">Validity date</Label>
+                        <Input
+                          id="payment-expiry"
+                          placeholder="MM/YY"
+                          aria-invalid={paymentForm.formState.errors.expiry ? 'true' : 'false'}
+                          aria-describedby={paymentForm.formState.errors.expiry ? 'payment-expiry-error' : undefined}
+                          {...paymentForm.register('expiry', {
+                            required: 'Expiry is required',
+                            validate: (value) => /^(0[1-9]|1[0-2])\/\d{2}$/.test(value.trim()) || 'Use MM/YY format',
+                          })}
+                        />
+                        {paymentForm.formState.errors.expiry && (
+                          <p id="payment-expiry-error" className="text-sm text-red-500" role="alert">
+                            {paymentForm.formState.errors.expiry.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="payment-cvv">CVV</Label>
+                        <Input
+                          id="payment-cvv"
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="123"
+                          aria-invalid={paymentForm.formState.errors.cvv ? 'true' : 'false'}
+                          aria-describedby={paymentForm.formState.errors.cvv ? 'payment-cvv-error' : undefined}
+                          {...paymentForm.register('cvv', {
+                            required: 'CVV is required',
+                            validate: (value) => /^\d{3,4}$/.test(value.replace(/\s+/g, '')) || 'Enter a valid CVV',
+                          })}
+                        />
+                        {paymentForm.formState.errors.cvv && (
+                          <p id="payment-cvv-error" className="text-sm text-red-500" role="alert">
+                            {paymentForm.formState.errors.cvv.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="md:col-span-2 flex gap-3 pt-2">
+                        <Button type="button" variant="outline" onClick={() => { paymentForm.reset(); setShowPaymentForm(false); }}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" className="bg-purple-600 hover:bg-purple-700">
+                          Save card
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+
+                  <PaymentMethodPicker
+                    methods={paymentMethods}
+                    selectedMethodId={selectedMethodId}
+                    onSelect={selectMethod}
+                    onRemove={(id) => {
+                      removeMethod(id);
+                      toast.success('Payment method removed.');
+                    }}
+                    emptyAction={{
+                      label: 'Add debit card',
+                      onClick: () => setShowPaymentForm(true),
+                    }}
                   />
-                </div>
-              ) : (
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-800">
-                            <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Date</th>
-                            <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Course</th>
-                            <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Amount</th>
-                            <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {transactions.map(tx => (
-                            <tr key={tx.id} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                              <td className="px-4 py-3 text-gray-600 dark:text-slate-400 whitespace-nowrap">
-                                {new Date(tx.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                              </td>
-                              <td className="px-4 py-3 max-w-xs">
-                                <p className="truncate font-medium">{tx.courseTitle}</p>
-                              </td>
-                              <td className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-200">${tx.amount.toFixed(2)}</td>
-                              <td className="px-4 py-3">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  tx.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                }`}>{tx.status}</span>
-                              </td>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Payment History</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {transactions.length === 0 ? (
+                    <div className="px-6 pb-6">
+                      <div className="bg-gray-50 dark:bg-slate-900 rounded-xl">
+                        <EmptyState
+                          icon={<Receipt className="w-16 h-16" />}
+                          title="No purchases yet."
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-800">
+                              <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Date</th>
+                              <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Course</th>
+                              <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Amount</th>
+                              <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-slate-300">Status</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="px-4 py-3 border-t dark:border-slate-700 bg-gray-50 dark:bg-slate-800 flex justify-between text-sm">
-                      <span className="text-gray-600 dark:text-slate-400">Total spent</span>
-                      <span className="font-bold text-gray-800 dark:text-slate-200">
-                        ${transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(2)}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                          </thead>
+                          <tbody>
+                            {transactions.map(tx => (
+                              <tr key={tx.id} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                                <td className="px-4 py-3 text-gray-600 dark:text-slate-400 whitespace-nowrap">
+                                  {new Date(tx.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                </td>
+                                <td className="px-4 py-3 max-w-xs">
+                                  <p className="truncate font-medium">{tx.courseTitle}</p>
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-200">${tx.amount.toFixed(2)}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    tx.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                  }`}>{tx.status}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-4 py-3 border-t dark:border-slate-700 bg-gray-50 dark:bg-slate-800 flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-slate-400">Total spent</span>
+                        <span className="font-bold text-gray-800 dark:text-slate-200">
+                          ${transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -616,13 +830,13 @@ export default function Profile() {
                           </div>
                           <div className="flex-shrink-0">
                             {isCompleted ? (
-                              <Link to={`/certificate/${course.enrollmentId}`}>
+                              <Link to={`/certificate/${course.courseId}`}>
                                 <Button size="sm" className="bg-green-600 hover:bg-green-700">
                                   <Award className="w-3 h-3 mr-1" /> View Certificate
                                 </Button>
                               </Link>
                             ) : (
-                              <Link to={`/learn/${course.enrollmentId}`}>
+                              <Link to={`/learn/${course.courseId}`}>
                                 <Button size="sm" variant="outline">
                                   <Play className="w-3 h-3 mr-1" /> Continue
                                 </Button>

@@ -1,37 +1,33 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { useCart } from '@/app/store/CartContext';
+import { usePaymentMethods } from '@/app/store/PaymentMethodsContext';
 import { useAuth } from '@/app/store/AuthContext';
 import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
-import { Label } from '@/app/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { CheckCircle } from 'lucide-react';
-
-interface PaymentForm {
-  cardNumber: string;
-  expiry: string;
-  cvv: string;
-  name: string;
-}
+import { PaymentMethodPicker } from '@/app/components/PaymentMethodPicker';
 
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { enrollInCourse } = useAuth();
+  const { methods: paymentMethods, selectedMethodId, selectedMethod, selectMethod, removeMethod } = usePaymentMethods();
   const navigate = useNavigate();
   const [step, setStep] = useState<'summary' | 'payment' | 'confirmation'>('summary');
   const [orderId] = useState(() => crypto.randomUUID().slice(0, 8).toUpperCase());
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<PaymentForm>();
+  const onPayment = async () => {
+    if (!selectedMethod) {
+      toast.error('Add a payment method in your profile first.');
+      return;
+    }
 
-  const onPayment = async (_data: PaymentForm) => {
     await new Promise(r => setTimeout(r, 1500));
     await Promise.all(items.map(item => enrollInCourse(item.courseId, item.title, item.price)));
     clearCart();
     setStep('confirmation');
-    toast.success('Payment successful!');
+    toast.success(`Paid with ${selectedMethod.nickname}.`);
   };
 
   if (step === 'confirmation') {
@@ -77,89 +73,31 @@ export default function Checkout() {
           {step === 'payment' && (
             <Card>
               <CardHeader><CardTitle>Payment Details</CardTitle></CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit(onPayment)} className="space-y-4" noValidate>
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Cardholder Name</Label>
-                    <Input
-                      id="name"
-                      autoComplete="cc-name"
-                      placeholder="John Doe"
-                      aria-invalid={errors.name ? 'true' : 'false'}
-                      aria-describedby={errors.name ? 'name-error' : undefined}
-                      {...register('name', { required: 'Required' })}
-                    />
-                    {errors.name && (
-                      <p id="name-error" className="text-sm text-red-500" role="alert">
-                        {errors.name.message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cardNumber">Card Number</Label>
-                    <Input
-                      id="cardNumber"
-                      autoComplete="cc-number"
-                      inputMode="numeric"
-                      placeholder="1234 5678 9012 3456"
-                      aria-invalid={errors.cardNumber ? 'true' : 'false'}
-                      aria-describedby={errors.cardNumber ? 'card-number-error' : undefined}
-                      {...register('cardNumber', { required: 'Required' })}
-                    />
-                    {errors.cardNumber && (
-                      <p id="card-number-error" className="text-sm text-red-500" role="alert">
-                        {errors.cardNumber.message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="expiry">Expiry</Label>
-                      <Input
-                        id="expiry"
-                        autoComplete="cc-exp"
-                        inputMode="numeric"
-                        placeholder="MM/YY"
-                        aria-invalid={errors.expiry ? 'true' : 'false'}
-                        aria-describedby={errors.expiry ? 'expiry-error' : undefined}
-                        {...register('expiry', { required: 'Required' })}
-                      />
-                      {errors.expiry && (
-                        <p id="expiry-error" className="text-sm text-red-500" role="alert">
-                          {errors.expiry.message}
-                        </p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cvv">CVV</Label>
-                      <Input
-                        id="cvv"
-                        autoComplete="cc-csc"
-                        inputMode="numeric"
-                        placeholder="123"
-                        aria-invalid={errors.cvv ? 'true' : 'false'}
-                        aria-describedby={errors.cvv ? 'cvv-error' : undefined}
-                        {...register('cvv', { required: 'Required' })}
-                      />
-                      {errors.cvv && (
-                        <p id="cvv-error" className="text-sm text-red-500" role="alert">
-                          {errors.cvv.message}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <Button type="button" variant="outline" onClick={() => setStep('summary')}>Back</Button>
-                    <Button
-                      type="submit"
-                      className="flex-1 bg-purple-600 hover:bg-purple-700"
-                      disabled={isSubmitting}
-                      aria-busy={isSubmitting}
-                    >
-                      {isSubmitting ? 'Processing...' : `Pay $${total.toFixed(2)}`}
-                    </Button>
-                  </div>
-                </form>
+              <CardContent className="space-y-4">
+                <PaymentMethodPicker
+                  methods={paymentMethods}
+                  selectedMethodId={selectedMethodId}
+                  onSelect={selectMethod}
+                  onRemove={(id) => {
+                    removeMethod(id);
+                    toast.success('Payment method removed.');
+                  }}
+                  emptyAction={{
+                    label: 'Add payment method',
+                    onClick: () => navigate('/profile?tab=payments'),
+                  }}
+                />
+                <div className="flex gap-3 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setStep('summary')}>Back</Button>
+                  <Button
+                    type="button"
+                    className="flex-1 bg-purple-600 hover:bg-purple-700"
+                    onClick={onPayment}
+                    disabled={!selectedMethod}
+                  >
+                    {selectedMethod ? `Pay $${total.toFixed(2)}` : 'Add payment method first'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

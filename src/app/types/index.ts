@@ -23,6 +23,16 @@ export interface CartItem {
   image: string;
 }
 
+export interface PaymentMethod {
+  id: string;
+  nickname: string;
+  holderName: string;
+  cardNumber: string;
+  expiry: string;
+  cvv: string;
+  createdAt: string;
+}
+
 export interface Notification {
   id: string;
   message: string;

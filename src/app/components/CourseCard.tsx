@@ -1,9 +1,9 @@
 import { Link } from 'react-router';
-import { Star, Clock, Users, Heart } from 'lucide-react';
+import { Star, Clock, Users, ShoppingCart } from 'lucide-react';
 import { Course } from '../data/courses';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
-import { useWishlist } from '@/app/store/WishlistContext';
+import { useCart } from '@/app/store/CartContext';
 import { toast } from 'sonner';
 
 interface CourseCardProps {
@@ -11,18 +11,25 @@ interface CourseCardProps {
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const { has, toggle } = useWishlist();
-  const wishlisted = has(course.id);
+  const { addToCart, isInCart } = useCart();
+  const inCart = isInCart(course.id);
 
   const discount = course.originalPrice
     ? Math.round((1 - course.price / course.originalPrice) * 100)
     : null;
 
-  const handleWishlistClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleCartClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    toggle(course.id);
-    toast.success(wishlisted ? 'Removed from wishlist' : 'Added to wishlist');
+    addToCart({
+      courseId: course.id,
+      title: course.title,
+      instructor: course.instructor,
+      price: course.price,
+      originalPrice: course.originalPrice,
+      image: course.image,
+    });
+    toast.success(inCart ? 'Already in cart' : 'Added to cart');
   };
 
   return (
@@ -49,16 +56,16 @@ export function CourseCard({ course }: CourseCardProps) {
           )}
           <button
             type="button"
-            onClick={handleWishlistClick}
-            aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-            aria-pressed={wishlisted}
+            onClick={handleCartClick}
+            aria-label={inCart ? 'Added to cart' : 'Add to cart'}
+            aria-pressed={inCart}
             className={`absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 ${
-              wishlisted
-                ? 'bg-red-500 text-white opacity-100'
-                : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 translate-y-1 group-hover:translate-y-0'
+              inCart
+                ? 'bg-purple-600 text-white opacity-100'
+                : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 translate-y-1 group-hover:translate-y-0'
             }`}
           >
-            <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />
+            <ShoppingCart className={`w-4 h-4 ${inCart ? 'fill-current' : ''}`} />
           </button>
         </div>
 

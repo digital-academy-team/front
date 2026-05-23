@@ -11,8 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import {
   Star,
   Clock,
@@ -24,10 +22,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/store/AuthContext';
+import { usePaymentMethods } from '@/app/store/PaymentMethodsContext';
 import { courseApi } from '@/app/services/api';
 import { toast } from 'sonner';
 import { Skeleton } from '../components/ui/skeleton';
 import { ErrorState } from '../components/ui/ErrorState';
+import { PaymentMethodPicker } from '@/app/components/PaymentMethodPicker';
 
 export function CourseDetail() {
   const { id } = useParams();
@@ -36,14 +36,13 @@ export function CourseDetail() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [isBuyNowOpen, setIsBuyNowOpen] = useState(false);
-  const [creditNumber, setCreditNumber] = useState('');
-  const [securityCode, setSecurityCode] = useState('');
   const [isBuyingNow, setIsBuyingNow] = useState(false);
   const [apiCourse, setApiCourse] = useState<Course | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(true);
   const [hasDetailError, setHasDetailError] = useState(false);
 
   const { isAuthenticated, user, enrollInCourse } = useAuth();
+  const { methods: paymentMethods, selectedMethodId, selectedMethod, selectMethod, removeMethod } = usePaymentMethods();
   const stateCourse = (location.state as { course?: Course } | null)?.course;
   const cachedCourses = (() => {
     try {
@@ -78,11 +77,10 @@ export function CourseDetail() {
       setHasDetailError(false);
 
       try {
-        const detail = await courseApi.publicDetail(id);
+        const seed = cachedCourses.find((item) => item.id === id || item.slug === id);
+        const lookupId = seed?.slug ?? id;
+        const detail = await courseApi.publicDetail(lookupId);
         if (!active || !detail) return;
-
-        const seed =
-          cachedCourses.find((item) => item.id === id || item.slug === id);
 
         setApiCourse({
           id: detail.id ?? seed?.id ?? id,
@@ -114,7 +112,13 @@ export function CourseDetail() {
         });
       } catch {
         if (active) {
-          setHasDetailError(true);
+          const localCourse = cachedCourses.find((item) => item.id === id || item.slug === id) ?? stateCourse ?? null;
+          if (localCourse) {
+            setApiCourse((current) => current ?? localCourse);
+            setHasDetailError(false);
+          } else {
+            setHasDetailError(true);
+          }
         }
       } finally {
         if (active) setIsLoadingDetail(false);
@@ -194,17 +198,13 @@ export function CourseDetail() {
     setIsBuyNowOpen(true);
   };
 
+  const openCourseContents = () => {
+    navigate(`/learn/${course.id}`);
+  };
+
   const handleConfirmBuyNow = async () => {
-    const normalizedCard = creditNumber.replace(/\D/g, '');
-    const normalizedCode = securityCode.replace(/\D/g, '');
-
-    if (normalizedCard.length < 12) {
-      toast.error('Enter a valid credit card number.');
-      return;
-    }
-
-    if (normalizedCode.length !== 3) {
-      toast.error('Enter a valid 3-digit security code.');
+    if (!selectedMethod) {
+      toast.error('Add a payment method in your profile first.');
       return;
     }
 
@@ -212,9 +212,7 @@ export function CourseDetail() {
       setIsBuyingNow(true);
       await enrollInCourse(course.id, course.title, course.price);
       setIsBuyNowOpen(false);
-      setCreditNumber('');
-      setSecurityCode('');
-      toast.success('Enrollment successful.');
+      toast.success(`Paid with ${selectedMethod.nickname}.`);
     } finally {
       setIsBuyingNow(false);
     }
@@ -326,14 +324,23 @@ export function CourseDetail() {
                   </div>
 
                   <div className="space-y-3 mb-6">
-                    <Button
-                      className="w-full bg-purple-600 hover:bg-purple-700"
-                      size="lg"
-                      onClick={handleBuyNow}
-                      disabled={isEnrolled}
-                    >
-                      Buy Now
-                    </Button>
+                    {isEnrolled ? (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700"
+                        size="lg"
+                        onClick={openCourseContents}
+                      >
+                        View Course Contents
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full bg-purple-600 hover:bg-purple-700"
+                        size="lg"
+                        onClick={handleBuyNow}
+                      >
+                        Buy Now
+                      </Button>
+                    )}
                   </div>
 
                   <p className="text-center text-sm text-gray-600 dark:text-slate-400 mb-4">
@@ -372,41 +379,33 @@ export function CourseDetail() {
           <DialogHeader>
             <DialogTitle>Buy Now</DialogTitle>
             <DialogDescription>
-              Enter your credit card number and 3-digit security code to complete enrollment.
+              Choose one of your saved payment methods to complete enrollment.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="credit-number">Credit Number</Label>
-              <Input
-                id="credit-number"
-                inputMode="numeric"
-                placeholder="1234 5678 9012 3456"
-                value={creditNumber}
-                onChange={(e) => setCreditNumber(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="security-code">3-digit Security Code</Label>
-              <Input
-                id="security-code"
-                inputMode="numeric"
-                maxLength={3}
-                placeholder="123"
-                value={securityCode}
-                onChange={(e) => setSecurityCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-              />
-            </div>
-          </div>
+          <PaymentMethodPicker
+            methods={paymentMethods}
+            selectedMethodId={selectedMethodId}
+            onSelect={selectMethod}
+            onRemove={(id) => {
+              removeMethod(id);
+              toast.success('Payment method removed.');
+            }}
+            emptyAction={{
+              label: 'Add payment method',
+              onClick: () => {
+                setIsBuyNowOpen(false);
+                navigate('/profile?tab=payments');
+              },
+            }}
+          />
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsBuyNowOpen(false)} disabled={isBuyingNow}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmBuyNow} disabled={isBuyingNow}>
-              {isBuyingNow ? 'Processing...' : 'Confirm Enrollment'}
+            <Button onClick={handleConfirmBuyNow} disabled={isBuyingNow || !selectedMethod}>
+              {isBuyingNow ? 'Processing...' : selectedMethod ? 'Confirm Enrollment' : 'Add payment method'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -426,11 +425,10 @@ export function CourseDetail() {
             </div>
           </div>
           <Button
-            className="bg-purple-600 hover:bg-purple-700"
-            onClick={handleBuyNow}
-            disabled={isEnrolled}
+            className={isEnrolled ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'}
+            onClick={isEnrolled ? openCourseContents : handleBuyNow}
           >
-            Buy Now
+            {isEnrolled ? 'View Course Contents' : 'Buy Now'}
           </Button>
         </div>
       </div>

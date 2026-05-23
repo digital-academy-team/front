@@ -288,6 +288,7 @@ export default function Learn() {
   const [myCourseDetail, setMyCourseDetail] = useState<MyCourseDetailResponse['data'] | null>(null);
   const [loadingMyCourse, setLoadingMyCourse] = useState(true);
   const [resolvedEnrollmentId, setResolvedEnrollmentId] = useState<string | null>(null);
+  const [resolvedPublicCourse, setResolvedPublicCourse] = useState<Course | null>(null);
   const cachedCourses = (() => {
     try {
       const raw = localStorage.getItem('da_public_courses_cache');
@@ -301,7 +302,8 @@ export default function Learn() {
   const enrollmentId = myCourseDetail?.id ?? resolvedEnrollmentId ?? learningId;
   const fallbackCourse = cachedCourses.find(c => c.id === learningId || c.slug === learningId);
   const resolvedCourseId = myCourseDetail?.course?.id ?? fallbackCourse?.id ?? learningId;
-  const resolvedCourse = cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId);
+  const resolvedCourseSlug = fallbackCourse?.slug ?? resolvedCourseId;
+  const resolvedCourse = resolvedPublicCourse ?? cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId);
   const sections: CourseSection[] = myCourseDetail
     ? myCourseDetail.course.units.map((unit) => ({
         section: unit.title,
@@ -345,6 +347,46 @@ export default function Learn() {
           if (matchedCourse?.id) {
             setResolvedEnrollmentId(matchedCourse.id);
             res = await courseApi.myEnrolledCourseDetail(matchedCourse.id);
+          } else {
+            const publicCourses = await courseApi.userCourses();
+            const matchedPublicCourse = publicCourses.data.find((item) => item.id === learningId || item.slug === learningId);
+
+            if (matchedPublicCourse) {
+              setResolvedPublicCourse(mapApiCourseToCourse(matchedPublicCourse));
+            } else {
+              try {
+                const detail = await courseApi.publicDetail(learningId);
+                setResolvedPublicCourse({
+                  id: detail.id ?? learningId,
+                  slug: detail.slug ?? learningId,
+                  title: detail.title ?? 'My Course',
+                  instructor: detail.instructor_name ?? detail.teacher_name ?? detail.instructor ?? 'Digital Academy',
+                  rating: 4.7,
+                  reviewCount: 0,
+                  price: detail.discount_price ?? detail.base_price ?? 0,
+                  originalPrice: detail.base_price,
+                  image: detail.cover_img ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
+                  category: 'development',
+                  level: 'All Levels',
+                  duration: 'Self-paced',
+                  students: 0,
+                  description: detail.desc ?? '',
+                  lastUpdated: '2026',
+                  language: 'English',
+                  whatYouWillLearn: ['Course content available after enrollment'],
+                  requirements: ['Internet connection'],
+                  curriculum: Array.isArray(detail.units)
+                    ? detail.units.map((unit: { title: string; lessons?: unknown[] }) => ({
+                        section: unit.title,
+                        lectures: Array.isArray(unit.lessons) ? unit.lessons.length : 0,
+                        duration: '--',
+                      }))
+                    : [],
+                });
+              } catch {
+                // Leave the page to fall back to local/cache data.
+              }
+            }
           }
         }
 
@@ -514,7 +556,7 @@ export default function Learn() {
     <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col overflow-hidden">
       {/* Top header bar */}
       <div className="bg-slate-900/90 backdrop-blur px-4 py-3 flex items-center gap-4 border-b border-slate-700 flex-shrink-0">
-        <Link to={resolvedCourseId ? `/course/${resolvedCourseId}` : '/courses'}>
+        <Link to={resolvedCourseSlug ? `/course/${resolvedCourseSlug}` : '/courses'}>
           <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white hover:bg-slate-800">
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
