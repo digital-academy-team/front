@@ -1,12 +1,75 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router';
-import { quizResultApi, type QuizResultEntry } from '@/app/services/api';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { EmptyState } from '@/app/components/ui/EmptyState';
 import { ErrorState } from '@/app/components/ui/ErrorState';
 import { Button } from '@/app/components/ui/button';
 import { ArrowLeft, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useAuth } from '@/app/store/AuthContext';
+
+interface QuizHistoryEntry {
+  id: string;
+  quiz_title: string;
+  correct_answers: number;
+  wrong_answers: number;
+  total_questions: number;
+  status: 'PASSED' | 'FAILED';
+  stars: number;
+  total: string;
+  attempt: number;
+  createdAt: string;
+  course_id: string;
+  course_title: string;
+}
+
+const QUIZ_HISTORY_STORAGE_PREFIX = 'da_quiz_history';
+
+function getQuizHistoryStorageKey(userId: string) {
+  return `${QUIZ_HISTORY_STORAGE_PREFIX}:${userId}`;
+}
+
+function loadQuizHistory(userId: string): QuizHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(getQuizHistoryStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    // Normalize incoming entries — older code (Learn.tsx) saves camelCase keys,
+    // while some serializers use snake_case. Map both formats to the expected shape.
+    return parsed.map((item: any) => {
+      const quiz_title = item.quiz_title ?? item.quizTitle ?? item.title ?? '';
+      const correct_answers = Number(item.correct_answers ?? item.correctAnswers ?? item.correct ?? 0) || 0;
+      const wrong_answers = Number(item.wrong_answers ?? item.wrongAnswers ?? (item.total_questions ? (item.total_questions - correct_answers) : undefined) ?? 0) || 0;
+      const total_questions = Number(item.total_questions ?? item.totalQuestions ?? item.total_questions ?? 0) || 0;
+      const status = (item.status ?? item.state) as 'PASSED' | 'FAILED' ?? 'FAILED';
+      const stars = Number(item.stars ?? item.star ?? 0) || 0;
+      const total = String(item.total ?? item.points ?? '') || '';
+      const attempt = Number(item.attempt ?? 1) || 1;
+      const createdAt = item.createdAt ?? item.created_at ?? new Date().toISOString();
+      const course_id = item.course_id ?? item.courseId ?? item.courseId ?? '';
+      const course_title = item.course_title ?? item.courseTitle ?? '';
+
+      return {
+        id: String(item.id ?? (crypto && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}`)),
+        quiz_title,
+        correct_answers,
+        wrong_answers,
+        total_questions,
+        status,
+        stars,
+        total,
+        attempt,
+        createdAt,
+        course_id,
+        course_title,
+      } as QuizHistoryEntry;
+    });
+  } catch {
+    return [];
+  }
+}
 
 const PAGE_SIZE = 20;
 
@@ -125,24 +188,34 @@ function Pagination({ page, totalPages, onPrev, onNext }: PaginationProps) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function QuizHistory() {
-  const [allEntries, setAllEntries] = useState<QuizResultEntry[]>([]);
+  const { user } = useAuth();
+  const [allEntries, setAllEntries] = useState<QuizHistoryEntry[]>([]);
   const [status, setStatus] = useState<'loading' | 'error' | 'done'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [page, setPage] = useState(1);
 
-  const fetchHistory = useCallback(async () => {
+  const fetchHistory = useCallback(() => {
     setStatus('loading');
     setErrorMsg('');
     try {
-      const res = await quizResultApi.list();
-      setAllEntries(res.data ?? []);
+      if (!user?.id) {
+        setAllEntries([]);
+        setPage(1);
+        setStatus('done');
+        return;
+      }
+
+      const entries = loadQuizHistory(user.id).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setAllEntries(entries);
       setPage(1);
       setStatus('done');
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to load quiz history.');
+    } catch {
+      setErrorMsg('Failed to load quiz history.');
       setStatus('error');
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     fetchHistory();
@@ -180,7 +253,7 @@ export default function QuizHistory() {
         {status === 'done' && allEntries.length === 0 && (
           <EmptyState
             title="No quizzes yet."
-            description="Take a quiz from one of your enrolled courses to get started."
+            description="Take a quiz from one of your enrolled courses to see your history here."
             action={{ label: 'Browse courses', to: '/courses' }}
           />
         )}

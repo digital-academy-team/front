@@ -7,6 +7,7 @@ import { Skeleton } from '@/app/components/ui/skeleton';
 import { ErrorState } from '@/app/components/ui/ErrorState';
 import { courseApi, resolveCourseId, type MyCourseDetailResponse, type QuizSubmitResultResponseExtended } from '@/app/services/api';
 import { useAuth } from '@/app/store/AuthContext';
+import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 import { ArrowLeft, CheckCircle, PlayCircle, Trophy, FileText, ClipboardList, ExternalLink, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -69,6 +70,55 @@ function mapApiQuizToUi(
 }
 
 type QuizSubmitData = QuizSubmitResultResponseExtended['data'];
+
+interface QuizHistoryRecord {
+  id: string;
+  quizId: string;
+  quizTitle: string;
+  courseId: string;
+  courseTitle: string;
+  correctAnswers: number;
+  wrongAnswers: number;
+  totalQuestions: number;
+  status: 'PASSED' | 'FAILED';
+  stars: number;
+  total: string;
+  attempt: number;
+  createdAt: string;
+}
+
+const QUIZ_HISTORY_STORAGE_PREFIX = 'da_quiz_history';
+
+function getQuizHistoryStorageKey(userId: string) {
+  return `${QUIZ_HISTORY_STORAGE_PREFIX}:${userId}`;
+}
+
+function loadQuizHistory(userId: string): QuizHistoryRecord[] {
+  try {
+    const raw = localStorage.getItem(getQuizHistoryStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as QuizHistoryRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQuizHistoryEntry(userId: string, entry: QuizHistoryRecord) {
+  try {
+    const existing = loadQuizHistory(userId);
+    localStorage.setItem(getQuizHistoryStorageKey(userId), JSON.stringify([entry, ...existing]));
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function resolveStars(percent: number) {
+  if (percent >= 90) return 3;
+  if (percent >= 80) return 2;
+  if (percent >= 70) return 1;
+  return 0;
+}
 
 function resultCopy({
   status,
@@ -284,7 +334,7 @@ function QuizResults({ quiz, selectedAnswers, submitData, hasTier, onRetake, onC
 
 export default function Learn() {
   const { courseId: learningId } = useParams<{ courseId: string }>();
-  const { tier, refreshGamification } = useAuth();
+  const { user, tier, refreshGamification } = useAuth();
   const [myCourseDetail, setMyCourseDetail] = useState<MyCourseDetailResponse['data'] | null>(null);
   const [loadingMyCourse, setLoadingMyCourse] = useState(true);
   const [resolvedEnrollmentId, setResolvedEnrollmentId] = useState<string | null>(null);
@@ -729,9 +779,34 @@ export default function Learn() {
                     const total = sectionQuiz.questions.length;
                     const finalCorrect = typeof serverCorrectAnswers === 'number' ? serverCorrectAnswers : correct;
                     const passed = typeof serverPassed === 'boolean' ? serverPassed : (finalCorrect / total >= 0.6);
+                    const percent = total > 0 ? (finalCorrect / total) * 100 : 0;
+                    const localHistory = user?.id ? loadQuizHistory(user.id) : [];
+                    const quizHistoryCourseId = resolvedCourseId ?? learningId ?? 'unknown-course';
+                    const nextAttempt = typeof serverData?.attempt === 'number'
+                      ? serverData.attempt
+                      : localHistory.filter((entry) => entry.quizId === sectionQuiz.id).length + 1;
+
                     const existing = JSON.parse(localStorage.getItem(quizStorageKey) ?? '{}');
                     if (!existing.passed || finalCorrect > (existing.correct ?? 0)) {
                       localStorage.setItem(quizStorageKey, JSON.stringify({ score: finalCorrect, total, passed, correct: finalCorrect }));
+                    }
+
+                    if (user?.id) {
+                      saveQuizHistoryEntry(user.id, {
+                        id: crypto.randomUUID(),
+                        quizId: sectionQuiz.id,
+                        quizTitle: sectionQuiz.title,
+                        courseId: quizHistoryCourseId,
+                        courseTitle,
+                        correctAnswers: finalCorrect,
+                        wrongAnswers: Math.max(total - finalCorrect, 0),
+                        totalQuestions: total,
+                        status: passed ? 'PASSED' : 'FAILED',
+                        stars: typeof serverData?.stars === 'number' ? serverData.stars : resolveStars(percent),
+                        total: String(serverData?.total ?? finalCorrect),
+                        attempt: nextAttempt,
+                        createdAt: new Date().toISOString(),
+                      });
                     }
 
                     if (passed) {
