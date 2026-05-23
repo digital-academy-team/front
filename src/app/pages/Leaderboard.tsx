@@ -36,7 +36,9 @@ function TierChip({ tier }: { tier: Tier }) {
 
 function getEntryDisplayName(entry: LeaderboardEntry) {
   const fullName = [entry.first_name, entry.last_name].filter(Boolean).join(' ').trim();
-  return entry.full_name?.trim() || fullName || entry.username;
+  // Prefer email when available (server may return email in several shapes), fall back to full_name, name parts, or username.
+  const maybeEmail = (entry as any).email ?? (entry as any).user?.email ?? (entry as any).user_email ?? entry.username;
+  return String(maybeEmail ?? entry.full_name ?? fullName ?? '').trim() || '';
 }
 
 // ── Skeleton rows ──────────────────────────────────────────────────────────
@@ -102,7 +104,20 @@ export default function Leaderboard() {
     setErrorMsg('');
     try {
       const res = await leaderboardApi.list();
-      setEntries(res.data ?? []);
+      // DEBUG: expose raw leaderboard payload to window and log it to help diagnose missing email fields
+      // Remove these lines after verification.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).__leaderboardEntries = res?.data ?? res;
+      } catch {}
+      // Keep the payload accessible on `window.__leaderboardEntries` for manual inspection in DevTools.
+      // Normalize entries: ensure `username` field is populated when possible
+      const rawEntries = (res.data ?? []) as any[];
+      const normalized = rawEntries.map((e) => ({
+        ...e,
+        username: e.username ?? e.email ?? e.user?.email ?? e.user_email ?? e.full_name ?? e.first_name ?? e.last_name ?? null,
+      }));
+      setEntries(normalized as LeaderboardEntry[]);
       setStatus('done');
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load leaderboard.');
@@ -259,33 +274,32 @@ export default function Leaderboard() {
                   {status === 'loading' ? (
                     <LeaderboardSkeletonRows />
                   ) : (
-                    entries.map((entry) => {
-                      const entryName = getEntryDisplayName(entry);
+                    entries.map((entry, idx) => {
+                      // Prefer `username` (API commonly stores email here), then `email`, then full name.
+                      const entryEmail = String((entry as any).email ?? (entry as any).user?.email ?? (entry as any).user_email ?? '').trim();
+                      const nameFromParts = (entry.first_name || entry.last_name) ? `${entry.first_name ?? ''} ${entry.last_name ?? ''}` : '';
+                      const rawName = entry.username ?? (entryEmail || entry.full_name) ?? nameFromParts ?? '';
+                      const displayName = String(rawName ?? '').trim();
                       const isMe = Boolean(
-                        myDisplayName && (
-                          entryName === myDisplayName ||
-                          myLegacyNames.has(entryName) ||
-                          myLegacyNames.has(entry.username)
+                        user?.email && (
+                          entry.username === user.email ||
+                          entryEmail === user.email ||
+                          displayName === user.email ||
+                          myLegacyNames.has(displayName)
                         )
                       );
+                      const shown = displayName || '—';
+
                       return (
                         <tr
-                          key={`${entry.username}-${entry.position}`}
-                          className={
-                            isMe
-                              ? 'bg-purple-50/50 dark:bg-purple-950/20'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors'
-                          }
+                          key={entry.username ? `${entry.username}-${entry.position}` : `leaderboard-row-${idx}`}
+                          className={isMe ? 'bg-purple-50/50 dark:bg-purple-950/20' : 'hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors'}
                         >
-                          <td className="py-3 px-4 font-mono text-gray-500 dark:text-gray-400">
-                            {entry.position ?? '—'}
-                          </td>
+                          <td className="py-3 px-4 font-mono text-gray-500 dark:text-gray-400">{entry.position ?? '—'}</td>
                           <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100 truncate max-w-[200px]">
-                            {entryName}
+                            {shown}
                             {isMe && (
-                              <span className="ml-2 text-xs text-purple-600 dark:text-purple-400 font-normal">
-                                (you)
-                              </span>
+                              <span className="ml-2 text-xs text-purple-600 dark:text-purple-400 font-normal">(you)</span>
                             )}
                           </td>
                           <td className="py-3 px-4">
