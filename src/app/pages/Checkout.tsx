@@ -19,7 +19,7 @@ export default function Checkout() {
 
   const onPayment = async () => {
     if (!selectedMethod) {
-      toast.error('Add a payment method in your profile first.');
+      navigate('/profile?tab=payments');
       return;
     }
 
@@ -93,7 +93,6 @@ export default function Checkout() {
                     type="button"
                     className="flex-1 bg-purple-600 hover:bg-purple-700"
                     onClick={onPayment}
-                    disabled={!selectedMethod}
                   >
                     {selectedMethod ? `Pay $${total.toFixed(2)}` : 'Add payment method first'}
                   </Button>

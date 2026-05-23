@@ -1,8 +1,7 @@
 import { CreditCard, Trash2 } from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
-import { Card, CardContent } from '@/app/components/ui/card';
 import { maskCardNumber } from '@/app/store/PaymentMethodsContext';
 import { PaymentMethod } from '@/app/types';
+import { Button } from '@/app/components/ui/button';
 
 interface PaymentMethodPickerProps {
   methods: PaymentMethod[];
@@ -18,22 +17,17 @@ interface PaymentMethodPickerProps {
 export function PaymentMethodPicker({ methods, selectedMethodId, onSelect, onRemove, emptyAction }: PaymentMethodPickerProps) {
   if (methods.length === 0) {
     return (
-      <Card className="border-dashed border-gray-200 dark:border-slate-700">
-        <CardContent className="p-6 text-center space-y-4">
-          <div className="mx-auto w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-300">
-            <CreditCard className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="font-semibold dark:text-slate-100">No saved payment methods yet.</p>
-            <p className="text-sm text-gray-500 dark:text-slate-400">Add a debit card in your profile to use it here.</p>
-          </div>
-          {emptyAction && (
-            <Button className="bg-purple-600 hover:bg-purple-700" onClick={emptyAction.onClick}>
-              {emptyAction.label}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/70 px-5 py-4 text-sm text-gray-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+        <div className="flex items-center gap-2">
+          <CreditCard className="w-4 h-4 text-purple-500 dark:text-purple-300" />
+          <span>No saved payment methods yet. Use the button above to add one.</span>
+        </div>
+        {emptyAction && (
+          <Button type="button" variant="outline" size="sm" onClick={emptyAction.onClick} className="mt-3">
+            {emptyAction.label}
+          </Button>
+        )}
+      </div>
     );
   }
 

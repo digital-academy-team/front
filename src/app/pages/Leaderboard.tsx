@@ -34,6 +34,11 @@ function TierChip({ tier }: { tier: Tier }) {
   );
 }
 
+function getEntryDisplayName(entry: LeaderboardEntry) {
+  const fullName = [entry.first_name, entry.last_name].filter(Boolean).join(' ').trim();
+  return entry.full_name?.trim() || fullName || entry.username;
+}
+
 // ── Skeleton rows ──────────────────────────────────────────────────────────
 
 function LeaderboardSkeletonRows() {
@@ -116,14 +121,18 @@ export default function Leaderboard() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchLeaderboard]);
 
-  // Use position from AuthContext (populated by refreshGamification which fetches
-  // the fresh profile.username before matching) instead of user.name which may be
-  // a display name that does not match the leaderboard's username field.
+  // Prefer the current profile display name, but keep username-compatible fallback data
+  // for older leaderboard payloads.
   const myEntry =
     leaderboardPosition !== null
       ? (entries.find((e) => e.position === leaderboardPosition) ?? null)
       : null;
-  const myUsername = myEntry?.username ?? user?.name ?? '';
+  const myDisplayName = user?.name ?? '';
+  const myLegacyNames = new Set([
+    user?.email?.split('@')[0],
+    user?.email,
+    user?.name,
+  ].filter((value): value is string => Boolean(value && value.trim())));
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950 pb-16">
@@ -251,7 +260,14 @@ export default function Leaderboard() {
                     <LeaderboardSkeletonRows />
                   ) : (
                     entries.map((entry) => {
-                      const isMe = myUsername && entry.username === myUsername;
+                      const entryName = getEntryDisplayName(entry);
+                      const isMe = Boolean(
+                        myDisplayName && (
+                          entryName === myDisplayName ||
+                          myLegacyNames.has(entryName) ||
+                          myLegacyNames.has(entry.username)
+                        )
+                      );
                       return (
                         <tr
                           key={`${entry.username}-${entry.position}`}
@@ -265,7 +281,7 @@ export default function Leaderboard() {
                             {entry.position ?? '—'}
                           </td>
                           <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100 truncate max-w-[200px]">
-                            {entry.username}
+                            {entryName}
                             {isMe && (
                               <span className="ml-2 text-xs text-purple-600 dark:text-purple-400 font-normal">
                                 (you)
@@ -310,7 +326,14 @@ export default function Leaderboard() {
               <LeaderboardSkeletonCards />
             ) : (
               entries.map((entry) => {
-                const isMe = myUsername && entry.username === myUsername;
+                const entryName = getEntryDisplayName(entry);
+                const isMe = Boolean(
+                  myDisplayName && (
+                    entryName === myDisplayName ||
+                    myLegacyNames.has(entryName) ||
+                    myLegacyNames.has(entry.username)
+                  )
+                );
                 return (
                   <div
                     key={`${entry.username}-${entry.position}`}
@@ -325,8 +348,8 @@ export default function Leaderboard() {
                         <span className="font-mono text-gray-400 dark:text-gray-500 text-sm w-6 shrink-0">
                           #{entry.position ?? '—'}
                         </span>
-                        <span className="font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {entry.username}
+                        <span className="font-semibold text-gray-800 dark:text-gray-100 truncate">
+                          {entryName}
                           {isMe && (
                             <span className="ml-1.5 text-xs text-purple-600 dark:text-purple-400 font-normal">
                               (you)

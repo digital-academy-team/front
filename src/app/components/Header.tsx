@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import {
   Search, User, LogOut, BookOpen,
   LayoutDashboard, HelpCircle, ShoppingCart,
-  Sun, Moon, Coins,
+  Sun, Moon, Coins, Trophy,
 } from 'lucide-react';
 import { Tier } from '@/app/services/api';
 import { Button } from './ui/button';
@@ -176,11 +176,11 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex items-center gap-3 md:gap-4">
+      <div className="w-full px-3 sm:px-4 lg:px-6 py-3">
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
 
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 shrink-0" aria-label="Digital Academy home">
+          <Link to="/" className="flex items-center gap-2 shrink-0 pl-0.5 sm:pl-1" aria-label="Digital Academy home">
             <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center">
               <span className="text-white text-xl font-bold">D</span>
             </div>
@@ -213,7 +213,7 @@ export function Header() {
           </div>
 
           {/* Right Side */}
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-2 sm:gap-2.5 lg:gap-3 shrink-0">
             <Button
               variant="ghost"
               size="icon"
@@ -255,18 +255,15 @@ export function Header() {
                 to="/leaderboard"
                 aria-label={tier ? `${TIER_LABEL[tier]} tier, position ${leaderboardPosition ?? '—'}` : 'Unranked, view leaderboard'}
                 title={tier ? `${TIER_LABEL[tier]} — #${leaderboardPosition ?? '—'}` : 'Unranked'}
-                className="w-7 h-7 rounded-full flex items-center justify-center hover:ring-2 hover:ring-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all"
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 hover:ring-2 hover:ring-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all ${tier ? TIER_COLORS[tier] : 'bg-slate-300 dark:bg-slate-600'}`}
               >
-                <span
-                  className={`w-3 h-3 rounded-full ${tier ? TIER_COLORS[tier] : 'bg-slate-300 dark:bg-slate-600'}`}
-                  aria-hidden="true"
-                />
+                <Trophy className="w-4 h-4 text-white" aria-hidden="true" />
               </Link>
             )}
 
             {/* Cart icon — visible to everyone, count from CartContext */}
             <Link to="/cart" aria-label={`Cart with ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
-              <Button variant="ghost" size="icon" className="relative dark:hover:bg-slate-800 dark:text-slate-300">
+              <Button variant="ghost" size="icon" className="relative shrink-0 dark:hover:bg-slate-800 dark:text-slate-300">
                 <ShoppingCart className="w-5 h-5" aria-hidden="true" />
                 {cartCount > 0 && (
                   <span
@@ -281,7 +278,7 @@ export function Header() {
 
             {/* Help */}
             <Link to="/help">
-              <Button variant="ghost" size="sm" className="hidden lg:flex gap-1.5 text-gray-600 dark:text-slate-300 hover:text-purple-700 dark:hover:bg-slate-800 dark:hover:text-purple-400">
+                <Button variant="ghost" size="sm" className="hidden lg:flex gap-1.5 shrink-0 text-gray-600 dark:text-slate-300 hover:text-purple-700 dark:hover:bg-slate-800 dark:hover:text-purple-400">
                 <HelpCircle className="w-4 h-4" aria-hidden="true" />
                 Help
               </Button>
@@ -293,7 +290,7 @@ export function Header() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="w-9 h-9 rounded-full flex items-center justify-center hover:ring-2 hover:ring-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all ml-1"
+                  className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 hover:ring-2 hover:ring-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all"
                   aria-label="Open user menu"
                 >
                   <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm overflow-hidden select-none">

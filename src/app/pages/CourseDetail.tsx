@@ -204,7 +204,8 @@ export function CourseDetail() {
 
   const handleConfirmBuyNow = async () => {
     if (!selectedMethod) {
-      toast.error('Add a payment method in your profile first.');
+      setIsBuyNowOpen(false);
+      navigate('/profile?tab=payments');
       return;
     }
 
@@ -404,7 +405,7 @@ export function CourseDetail() {
             <Button variant="outline" onClick={() => setIsBuyNowOpen(false)} disabled={isBuyingNow}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmBuyNow} disabled={isBuyingNow || !selectedMethod}>
+            <Button onClick={handleConfirmBuyNow} disabled={isBuyingNow}>
               {isBuyingNow ? 'Processing...' : selectedMethod ? 'Confirm Enrollment' : 'Add payment method'}
             </Button>
           </DialogFooter>

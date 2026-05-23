@@ -60,8 +60,26 @@ function loadSelectedMethodId(storageKey: string | null): string | null {
   }
 }
 
-function normalizeCardNumber(value: string) {
-  return value.replace(/\D/g, '').slice(0, 19);
+export function normalizeCardNumber(value: string) {
+  return value.replace(/\D/g, '').slice(0, 16);
+}
+
+export function formatCardNumberInput(value: string) {
+  return normalizeCardNumber(value).replace(/(.{4})(?=.)/g, '$1 ').trim();
+}
+
+export function normalizeExpiry(value: string) {
+  return value.replace(/\D/g, '').slice(0, 4);
+}
+
+export function formatExpiryInput(value: string) {
+  const digits = normalizeExpiry(value);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+export function normalizeCvv(value: string) {
+  return value.replace(/\D/g, '').slice(0, 3);
 }
 
 export function maskCardNumber(cardNumber: string) {
@@ -157,8 +175,8 @@ export function PaymentMethodsProvider({ children }: { children: React.ReactNode
       nickname: method.nickname.trim(),
       holderName: method.holderName.trim(),
       cardNumber: normalizeCardNumber(method.cardNumber),
-      expiry: method.expiry.trim(),
-      cvv: method.cvv.replace(/\D/g, '').slice(0, 4),
+      expiry: formatExpiryInput(method.expiry.trim()),
+      cvv: normalizeCvv(method.cvv),
       createdAt: new Date().toISOString(),
     };
 

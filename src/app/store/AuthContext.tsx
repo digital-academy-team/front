@@ -62,6 +62,25 @@ function pickFirstString(...values: Array<unknown>): string {
   return '';
 }
 
+function buildFullName(...values: Array<unknown>): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function splitFullName(fullName: string): { first_name?: string; last_name?: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { first_name: parts[0] };
+  return {
+    first_name: parts[0],
+    last_name: parts.slice(1).join(' '),
+  };
+}
+
 function normalizeLoginPayload(payload: any): {
   access: string;
   refresh: string;
@@ -136,8 +155,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profile) setCoin(profile.coin ?? 0);
       const lb = await leaderboardApi.list();
       const rows = lb.data ?? [];
-      const myUsername = profile?.username ?? state.user?.name ?? '';
-      const me = rows.find(r => r.username === myUsername) ?? null;
+      const myDisplayName = buildFullName(
+        [profile?.first_name, profile?.last_name].filter(Boolean).join(' '),
+        profile?.username,
+        state.user?.name
+      );
+      const myLegacyNames = new Set(
+        [
+          profile?.username,
+          state.user?.name,
+          state.user?.email?.split('@')[0],
+        ].filter((value): value is string => Boolean(value && value.trim()))
+      );
+      const me = rows.find((r: any) => {
+        const rowDisplayName = buildFullName(
+          r.full_name,
+          [r.first_name, r.last_name].filter(Boolean).join(' '),
+          r.username
+        );
+        return rowDisplayName === myDisplayName || myLegacyNames.has(rowDisplayName) || myLegacyNames.has(r.username);
+      }) ?? null;
       setTier(me?.tier ?? null);
       setLeaderboardPosition(me?.position ?? null);
       // Tier-up celebration
@@ -229,9 +266,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const resolvedEmail = normalized.user?.email ?? (claims?.email as string | undefined) ?? email;
+      const profile = await authApi.getProfile().catch(() => null);
+      const profileName = buildFullName(
+        [profile?.first_name, profile?.last_name].filter(Boolean).join(' '),
+        claims?.full_name,
+        claims?.name,
+        [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+        normalized.user.username
+      );
       const u: User = {
         id: normalized.user.id ?? String(claims?.user_id ?? claims?.id ?? Date.now()),
-        name: normalized.user.username ?? resolvedEmail.split('@')[0],
+        name: profileName || resolvedEmail.split('@')[0],
         email: resolvedEmail,
         role,
         enrolledCourseIds: [],
@@ -280,9 +325,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setTokens(access, refresh);
 
+    const profile = await authApi.getProfile().catch(() => null);
+    const profileName = buildFullName(
+      [profile?.first_name, profile?.last_name].filter(Boolean).join(' '),
+      profileHint?.fullName,
+      [profileHint?.firstName, profileHint?.lastName].filter(Boolean).join(' '),
+      claims?.full_name,
+      claims?.name,
+      [claims?.first_name, claims?.last_name].filter(Boolean).join(' '),
+      profileHint?.username,
+      state.user?.name
+    );
+
     const u: User = {
       id: userId,
-      name: pickFirstString(nameFromHint, nameFromClaims, state.user?.name, fallbackName),
+      name: pickFirstString(profileName, nameFromHint, nameFromClaims, state.user?.name, fallbackName),
       email,
       role,
       enrolledCourseIds: [],
@@ -331,8 +388,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...state.user, ...updates };
     setState(prev => ({ ...prev, user: updated }));
     if (apiAvailable) {
+      const splitName = splitFullName(updates.name ?? state.user.name);
       authApi.updateProfile({
-        first_name: updates.name,
+        first_name: splitName.first_name,
+        last_name: splitName.last_name,
         email: updates.email,
         avatar: updates.avatar ?? null,
       }).catch(() => {});

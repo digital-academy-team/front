@@ -11,7 +11,7 @@ interface CourseCardProps {
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const { addToCart, isInCart } = useCart();
+  const { addToCart, removeFromCart, isInCart } = useCart();
   const inCart = isInCart(course.id);
 
   const discount = course.originalPrice
@@ -21,6 +21,12 @@ export function CourseCard({ course }: CourseCardProps) {
   const handleCartClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    if (inCart) {
+      removeFromCart(course.id);
+      toast.success('Removed from cart');
+      return;
+    }
+
     addToCart({
       courseId: course.id,
       title: course.title,
@@ -29,7 +35,7 @@ export function CourseCard({ course }: CourseCardProps) {
       originalPrice: course.originalPrice,
       image: course.image,
     });
-    toast.success(inCart ? 'Already in cart' : 'Added to cart');
+    toast.success('Added to cart');
   };
 
   return (

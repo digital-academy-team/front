@@ -397,6 +397,9 @@ export interface ProfileUpdatePayload {
 
 export interface LeaderboardEntry {
   username: string;
+  full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   tier: Tier;
   total_stars: number;
   position: number | null;

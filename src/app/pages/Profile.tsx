@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '@/app/store/AuthContext';
-import { usePaymentMethods } from '@/app/store/PaymentMethodsContext';
+import { usePaymentMethods, formatCardNumberInput, formatExpiryInput, normalizeCardNumber, normalizeExpiry, normalizeCvv } from '@/app/store/PaymentMethodsContext';
 import { toast } from 'sonner';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -9,7 +9,7 @@ import { Label } from '@/app/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { EmptyState } from '@/app/components/ui/EmptyState';
-import { User, Lock, Bell, Eye, EyeOff, Camera, BookOpen, Receipt, Award, Play, Coins, Trophy, ClipboardList, Plus } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, Camera, BookOpen, Receipt, Award, Play, Coins, Trophy, ClipboardList, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { authApi, courseApi, resolveCourseId, type Tier, type ProfileResponse } from '@/app/services/api';
 import { type Course } from '@/app/data/courses';
 import { Link, useSearchParams } from 'react-router';
@@ -42,19 +42,9 @@ function TierChip({ tier }: { tier: Tier }) {
   );
 }
 
-// ── Username validation ────────────────────────────────────────────────────────
-
-const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
-const validateUsername = (v: string): string | null => {
-  if (v.length < 3) return 'Username must be at least 3 characters.';
-  if (v.length > 50) return 'Username must be 50 characters or fewer.';
-  if (!USERNAME_REGEX.test(v)) return 'Use only letters, digits, and underscores.';
-  return null;
-};
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'profile' | 'courses' | 'payments' | 'credentials' | 'security' | 'notifications';
+type Tab = 'profile' | 'courses' | 'payments' | 'credentials' | 'security';
 
 interface ProfileForm { name: string; email: string; bio: string; }
 interface PasswordForm { currentPassword: string; newPassword: string; confirmPassword: string; }
@@ -100,18 +90,14 @@ export default function Profile() {
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [notifPrefs, setNotifPrefs] = useState({ courseUpdates: true, enrollments: true, promotional: false, weeklyDigest: true });
   const [enrolledCourses, setEnrolledCourses] = useState<ProfileEnrolledCourse[]>([]);
   const [loadingEnrolledCourses, setLoadingEnrolledCourses] = useState(true);
 
-  // Username state
+  // Profile metadata state
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [remoteProfile, setRemoteProfile] = useState<ProfileResponse | null>(null);
-  const [usernameValue, setUsernameValue] = useState('');
-  const [usernameInitial, setUsernameInitial] = useState('');
-  const [usernameError, setUsernameError] = useState<string | null>(null);
-  const [usernameSaving, setUsernameSaving] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const profileForm = useForm<ProfileForm>({ defaultValues: { name: user?.name || '', email: user?.email || '', bio: user?.bio || '' } });
   const passwordForm = useForm<PasswordForm>();
@@ -134,18 +120,15 @@ export default function Profile() {
     if (tab) setActiveTab(tab);
   }, [searchParams]);
 
-  // Fetch remote profile for username (once on mount)
+  // Fetch remote profile metadata once on mount
   useEffect(() => {
     let cancelled = false;
     setLoadingProfile(true);
     authApi.getProfile().then((profile) => {
       if (cancelled) return;
       setRemoteProfile(profile);
-      const uname = profile?.username ?? '';
-      setUsernameValue(uname);
-      setUsernameInitial(uname);
     }).catch(() => {
-      // Non-critical — username field will just stay empty
+      // Non-critical — profile metadata may still be unavailable during auth transitions.
     }).finally(() => {
       if (!cancelled) setLoadingProfile(false);
     });
@@ -275,35 +258,12 @@ export default function Profile() {
     }
   };
 
-  const handleUsernameBlur = async () => {
-    const trimmed = usernameValue.trim();
-    const error = validateUsername(trimmed);
-    if (error) { setUsernameError(error); return; }
-    setUsernameError(null);
-    if (trimmed === usernameInitial) return; // unchanged
-
-    setUsernameSaving(true);
-    try {
-      await authApi.updateProfile({ username: trimmed });
-      setUsernameInitial(trimmed);
-      toast.success('Username updated!');
-      await refreshGamification();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update username');
-      setUsernameValue(usernameInitial); // revert on failure
-      setUsernameError(err instanceof Error ? err.message : 'Failed to update username');
-    } finally {
-      setUsernameSaving(false);
-    }
-  };
-
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'My Profile', icon: <User className="w-4 h-4" /> },
     { id: 'courses', label: 'My Courses', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'payments', label: 'Payments', icon: <Receipt className="w-4 h-4" /> },
     { id: 'credentials', label: 'Credentials', icon: <Award className="w-4 h-4" /> },
     { id: 'security', label: 'Security', icon: <Lock className="w-4 h-4" /> },
-    { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
   ];
 
   const onPaymentMethodSave = (data: PaymentMethodForm) => {
@@ -313,64 +273,112 @@ export default function Profile() {
     toast.success('Payment method saved!');
   };
 
+  const sidebarWidthClass = sidebarCollapsed ? 'lg:w-20' : 'lg:w-80';
+  const sidebarButtonClass = sidebarCollapsed
+    ? 'justify-center px-3'
+    : 'justify-start px-4';
+  const sidebarLabelClass = sidebarCollapsed ? 'lg:hidden' : 'lg:inline';
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 dark:bg-slate-950 min-h-screen">
-      <h1 className="text-3xl font-bold mb-8 dark:text-slate-100">My Account</h1>
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Sidebar */}
-        <div className="lg:col-span-1">
-          <div className="flex flex-col items-center mb-6">
-            <div className="w-20 h-20 rounded-full overflow-hidden bg-purple-600 flex items-center justify-center text-white text-2xl font-bold">
-              {avatarPreview
-                ? <img src={avatarPreview} alt="avatar" loading="lazy" decoding="async" width={80} height={80} className="w-full h-full object-cover" />
-                : user?.name?.charAt(0).toUpperCase()}
-            </div>
-            <p className="font-semibold mt-2 text-center dark:text-slate-100">{user?.name}</p>
-            <span className={`text-xs px-2 py-0.5 rounded-full mt-1 ${user?.role === 'instructor' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-              {user?.role}
-            </span>
-            {user?.role === 'student' && (
-              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{enrolledCourses.length} course{enrolledCourses.length !== 1 ? 's' : ''} enrolled</p>
-            )}
-          </div>
-          <nav className="space-y-1">
-            {tabs.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-purple-50 text-purple-700 dark:bg-slate-800 dark:text-purple-400' : 'text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800'}`}>
-                {tab.icon}{tab.label}
-              </button>
-            ))}
-          </nav>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-purple-50/40 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
+      <div className="w-full px-0 py-0">
+        <div className="flex items-start">
+          {/* Sidebar */}
+          <aside className={`sticky top-0 h-screen shrink-0 border-r border-gray-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl shadow-[8px_0_40px_rgba(15,23,42,0.05)] ${sidebarWidthClass}`}>
+            <div className={`h-full flex flex-col p-4 ${sidebarCollapsed ? 'items-center' : ''}`}>
+              <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : 'justify-between'} mb-4`}>
+                {!sidebarCollapsed && <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-400 dark:text-slate-500">Account</p>}
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed((prev) => !prev)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50 dark:border-slate-800 dark:text-slate-400 dark:hover:border-purple-700 dark:hover:bg-purple-900/20 dark:hover:text-purple-300"
+                  aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                  {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                </button>
+              </div>
 
-          {/* Gamification nav links */}
-          <div className="mt-6 border-t border-gray-100 dark:border-slate-800 pt-4 space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 px-4 pb-1">Gamification</p>
-            <Link
-              to="/leaderboard"
-              aria-label="Go to Leaderboard"
-              className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 transition-colors"
-            >
-              <Trophy className="w-4 h-4 flex-shrink-0 text-yellow-500" />
-              <span className="flex-1">Leaderboard</span>
-              {leaderboardPosition !== null && (
-                <span className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-700 rounded-full px-2 py-0.5 font-semibold">
-                  #{leaderboardPosition}
-                </span>
+              {sidebarCollapsed ? (
+                <div className="w-full flex justify-center py-2 mb-2">
+                  <div className="w-10 h-10 rounded-2xl overflow-hidden bg-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0 shadow-sm shadow-purple-600/20 ring-1 ring-purple-500/20">
+                    {avatarPreview
+                      ? <img src={avatarPreview} alt="avatar" loading="lazy" decoding="async" width={40} height={40} className="w-full h-full object-cover" />
+                      : user?.name?.charAt(0).toUpperCase()}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-gray-200/80 dark:border-slate-800 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-950 p-4 shadow-sm">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-purple-600 flex items-center justify-center text-white text-xl font-bold shrink-0 shadow-lg shadow-purple-600/20">
+                      {avatarPreview
+                        ? <img src={avatarPreview} alt="avatar" loading="lazy" decoding="async" width={64} height={64} className="w-full h-full object-cover" />
+                        : user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-slate-100 truncate">{user?.name}</p>
+                      <p className="text-sm text-gray-500 dark:text-slate-400 capitalize">{user?.role}</p>
+                      {user?.role === 'student' && (
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{enrolledCourses.length} course{enrolledCourses.length !== 1 ? 's' : ''} enrolled</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
-            </Link>
-            <Link
-              to="/profile/quiz-history"
-              aria-label="Go to Quiz history"
-              className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 transition-colors"
-            >
-              <ClipboardList className="w-4 h-4 flex-shrink-0 text-purple-500" />
-              <span>Quiz history</span>
-            </Link>
-          </div>
-        </div>
 
-        {/* Content */}
-        <div className="lg:col-span-3 space-y-6">
+              <nav className={`mt-6 space-y-2 ${sidebarCollapsed ? 'w-full' : ''}`}>
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    title={sidebarCollapsed ? tab.label : undefined}
+                    aria-label={tab.label}
+                    className={`group flex h-14 w-full items-center gap-3 rounded-2xl border text-sm font-medium transition-all ${sidebarButtonClass} ${activeTab === tab.id ? 'border-purple-200 bg-purple-50 text-purple-700 shadow-sm dark:border-purple-900/60 dark:bg-purple-900/20 dark:text-purple-300' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-300 dark:hover:border-slate-800 dark:hover:bg-slate-900/80'}`}
+                  >
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${activeTab === tab.id ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 group-hover:bg-white dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-900'}`}>
+                      {tab.icon}
+                    </span>
+                    <span className={`${sidebarLabelClass} truncate`}>{tab.label}</span>
+                  </button>
+                ))}
+              </nav>
+
+              <div className={`mt-6 border-t border-gray-200/80 dark:border-slate-800 pt-4 space-y-2 ${sidebarCollapsed ? 'w-full' : ''}`}>
+                {!sidebarCollapsed && (
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-400 dark:text-slate-500 px-1 pb-1">Gamification</p>
+                )}
+                <Link
+                  to="/leaderboard"
+                  aria-label="Go to Leaderboard"
+                  title={sidebarCollapsed ? 'Leaderboard' : undefined}
+                  className={`flex h-14 items-center gap-3 rounded-2xl border border-transparent px-4 text-sm font-medium text-gray-700 transition-colors hover:border-gray-200 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 dark:text-slate-300 dark:hover:border-slate-800 dark:hover:bg-slate-900/80 ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
+                >
+                  <Trophy className="w-4 h-4 flex-shrink-0 text-yellow-500" />
+                  <span className={`${sidebarLabelClass} flex-1`}>Leaderboard</span>
+                  {!sidebarCollapsed && leaderboardPosition !== null && (
+                    <span className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-700 rounded-full px-2 py-0.5 font-semibold">
+                      #{leaderboardPosition}
+                    </span>
+                  )}
+                </Link>
+                <Link
+                  to="/profile/quiz-history"
+                  aria-label="Go to Quiz history"
+                  title={sidebarCollapsed ? 'Quiz history' : undefined}
+                  className={`flex h-14 items-center gap-3 rounded-2xl border border-transparent px-4 text-sm font-medium text-gray-700 transition-colors hover:border-gray-200 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 dark:text-slate-300 dark:hover:border-slate-800 dark:hover:bg-slate-900/80 ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
+                >
+                  <ClipboardList className="w-4 h-4 flex-shrink-0 text-purple-500" />
+                  <span className={sidebarLabelClass}>Quiz history</span>
+                </Link>
+              </div>
+            </div>
+          </aside>
+
+          {/* Content */}
+          <main className="flex-1 min-w-0 px-6 py-8 lg:px-8">
+            <div className="max-w-6xl space-y-6">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-slate-100">My Account</h1>
+              </div>
 
           {/* COIN CARD + TIER BADGE — always visible regardless of tab */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -451,52 +459,11 @@ export default function Profile() {
                     </div>
                   </div>
 
-                  {/* Username field */}
-                  <div className="space-y-2">
-                    <Label htmlFor="username-input">Username</Label>
-                    {loadingProfile ? (
-                      <Skeleton className="h-9 w-full rounded-md" />
-                    ) : (
-                      <Input
-                        id="username-input"
-                        value={usernameValue}
-                        disabled={usernameSaving}
-                        placeholder="e.g. john_doe"
-                        onChange={e => {
-                          setUsernameValue(e.target.value);
-                          setUsernameError(null);
-                        }}
-                        onBlur={handleUsernameBlur}
-                        aria-describedby={usernameError ? 'username-error' : undefined}
-                        aria-invalid={usernameError ? true : undefined}
-                        className={usernameError ? 'border-red-500 focus-visible:ring-red-500' : ''}
-                      />
-                    )}
-                    {usernameError && (
-                      <p id="username-error" className="text-sm text-red-500">{usernameError}</p>
-                    )}
-                    {!loadingProfile && remoteProfile && !usernameError && (
-                      <p className="text-xs text-gray-400 dark:text-slate-500">Shown on the leaderboard. Letters, digits, and underscores only.</p>
-                    )}
-                  </div>
-
                   <div className="space-y-2">
                     <Label>Bio</Label>
                     <textarea {...profileForm.register('bio')} rows={4}
                       className="w-full border border-gray-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
                       placeholder="Tell students about yourself..." />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Role</Label>
-                      <div className="px-3 py-2 bg-gray-50 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm text-gray-600 dark:text-slate-300 capitalize">{user?.role}</div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Member Since</Label>
-                      <div className="px-3 py-2 bg-gray-50 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm text-gray-600 dark:text-slate-300">
-                        {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—'}
-                      </div>
-                    </div>
                   </div>
                   <Button type="submit" className="bg-purple-600 hover:bg-purple-700" disabled={profileForm.formState.isSubmitting}>
                     {profileForm.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
@@ -639,13 +606,18 @@ export default function Profile() {
                         <Input
                           id="payment-card-number"
                           inputMode="numeric"
+                          autoComplete="off"
                           placeholder="1234 5678 9012 3456"
                           aria-invalid={paymentForm.formState.errors.cardNumber ? 'true' : 'false'}
                           aria-describedby={paymentForm.formState.errors.cardNumber ? 'payment-card-number-error' : undefined}
                           {...paymentForm.register('cardNumber', {
                             required: 'Card number is required',
-                            validate: (value) => value.replace(/\D/g, '').length >= 12 || 'Enter a valid card number',
+                            onChange: (event) => {
+                              event.target.value = formatCardNumberInput(event.target.value);
+                            },
+                            validate: (value) => normalizeCardNumber(value).length === 16 || 'Enter a valid 16-digit card number',
                           })}
+                          maxLength={19}
                         />
                         {paymentForm.formState.errors.cardNumber && (
                           <p id="payment-card-number-error" className="text-sm text-red-500" role="alert">
@@ -657,13 +629,22 @@ export default function Profile() {
                         <Label htmlFor="payment-expiry">Validity date</Label>
                         <Input
                           id="payment-expiry"
+                          inputMode="numeric"
+                          autoComplete="off"
                           placeholder="MM/YY"
                           aria-invalid={paymentForm.formState.errors.expiry ? 'true' : 'false'}
                           aria-describedby={paymentForm.formState.errors.expiry ? 'payment-expiry-error' : undefined}
                           {...paymentForm.register('expiry', {
                             required: 'Expiry is required',
-                            validate: (value) => /^(0[1-9]|1[0-2])\/\d{2}$/.test(value.trim()) || 'Use MM/YY format',
+                            onChange: (event) => {
+                              event.target.value = formatExpiryInput(event.target.value);
+                            },
+                            validate: (value) => {
+                              const digits = normalizeExpiry(value);
+                              return (/^(0[1-9]|1[0-2])$/.test(digits.slice(0, 2)) && digits.length === 4) || 'Use MM/YY format';
+                            },
                           })}
+                          maxLength={5}
                         />
                         {paymentForm.formState.errors.expiry && (
                           <p id="payment-expiry-error" className="text-sm text-red-500" role="alert">
@@ -676,13 +657,17 @@ export default function Profile() {
                         <Input
                           id="payment-cvv"
                           inputMode="numeric"
-                          maxLength={4}
+                          autoComplete="off"
+                          maxLength={3}
                           placeholder="123"
                           aria-invalid={paymentForm.formState.errors.cvv ? 'true' : 'false'}
                           aria-describedby={paymentForm.formState.errors.cvv ? 'payment-cvv-error' : undefined}
                           {...paymentForm.register('cvv', {
                             required: 'CVV is required',
-                            validate: (value) => /^\d{3,4}$/.test(value.replace(/\s+/g, '')) || 'Enter a valid CVV',
+                            onChange: (event) => {
+                              event.target.value = normalizeCvv(event.target.value);
+                            },
+                            validate: (value) => normalizeCvv(value).length === 3 || 'Enter a valid 3-digit CVV',
                           })}
                         />
                         {paymentForm.formState.errors.cvv && (
@@ -709,10 +694,6 @@ export default function Profile() {
                     onRemove={(id) => {
                       removeMethod(id);
                       toast.success('Payment method removed.');
-                    }}
-                    emptyAction={{
-                      label: 'Add debit card',
-                      onClick: () => setShowPaymentForm(true),
                     }}
                   />
                 </CardContent>
@@ -900,38 +881,8 @@ export default function Profile() {
             </Card>
           )}
 
-          {/* NOTIFICATIONS TAB */}
-          {activeTab === 'notifications' && (
-            <Card>
-              <CardHeader><CardTitle>Notification Preferences</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-5">
-                  {[
-                    { key: 'courseUpdates', label: 'Course Updates', desc: 'Get notified when courses you\'re enrolled in are updated' },
-                    { key: 'enrollments', label: 'New Enrollments', desc: 'Notifications when students enroll in your courses (instructors)' },
-                    { key: 'promotional', label: 'Promotions & Offers', desc: 'Receive emails about deals, discounts, and new courses' },
-                    { key: 'weeklyDigest', label: 'Weekly Digest', desc: 'A weekly summary of your learning progress and recommendations' },
-                  ].map(item => (
-                    <div key={item.key} className="flex items-start justify-between gap-4 pb-5 border-b last:border-0 last:pb-0">
-                      <div>
-                        <p className="font-medium text-sm dark:text-slate-100">{item.label}</p>
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{item.desc}</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                        <input type="checkbox" className="sr-only peer"
-                          checked={notifPrefs[item.key as keyof typeof notifPrefs]}
-                          onChange={e => setNotifPrefs(p => ({ ...p, [item.key]: e.target.checked }))} />
-                        <div className="w-11 h-6 bg-gray-200 dark:bg-slate-700 peer-checked:bg-purple-600 rounded-full peer transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
-                      </label>
-                    </div>
-                  ))}
-                </div>
-                <Button className="mt-6 bg-purple-600 hover:bg-purple-700" onClick={() => toast.success('Notification preferences saved!')}>
-                  Save Preferences
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+            </div>
+          </main>
         </div>
       </div>
     </div>
