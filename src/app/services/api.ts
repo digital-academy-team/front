@@ -278,6 +278,8 @@ export interface UserPublicCourseItem {
   instructor?: string;
   instructor_name?: string;
   teacher_name?: string;
+  avg_rating?: number;
+  students_count?: number;
 }
 
 export interface UserPublicCourseListResponse {
@@ -697,13 +699,24 @@ export const courseApi = {
       body: JSON.stringify({ course: id }),
     }),
 
-  reviews: (id: string) => apiRequest<any[]>(`/api/users/comments/?course=${id}`),
+  reviews: async (id: string) => {
+    const response = await apiRequest<MaybeWrappedResponse<any[]>>(`/api/users/comments/?course=${id}`);
+    return unwrapApiData(response, [] as any[]);
+  },
 
-  addReview: (id: string, data: { rating: number; comment: string }) =>
-    apiRequest<any>('/api/users/comments/', {
+  addReview: async (id: string, data: { rating: number; comment: string }) => {
+    const response = await apiRequest<MaybeWrappedResponse<any>>('/api/users/comments/', {
       method: 'POST',
-      body: JSON.stringify({ course: id, comment: data.comment, likes: data.rating }),
-    }),
+      body: JSON.stringify({
+        course: id,
+        comment: data.comment.trim(),
+        rating: data.rating,
+        likes: data.rating,
+      }),
+    });
+
+    return unwrapApiData(response, null as any);
+  },
 
   getProgress: async (params: { enrollmentId?: string; courseId?: string }) => {
     const { enrollmentId, courseId } = params;

@@ -29,6 +29,53 @@ import { Skeleton } from '../components/ui/skeleton';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PaymentMethodPicker } from '@/app/components/PaymentMethodPicker';
 
+interface CourseComment {
+  id: string;
+  user?: string | null;
+  username?: string | null;
+  full_name?: string | null;
+  comment?: string | null;
+  likes?: number | null;
+  created_at?: string | null;
+  createdAt?: string | null;
+  rating?: number | null;
+}
+
+function getCommentAuthor(comment: CourseComment, fallbackIndex: number) {
+  return comment.username ?? comment.user ?? comment.full_name ?? `User ${fallbackIndex + 1}`;
+}
+
+function getCommentText(comment: CourseComment) {
+  return comment.comment ?? '';
+}
+
+function getCommentRating(comment: CourseComment) {
+  const raw = Number(comment.rating ?? comment.likes ?? 0);
+  return Number.isFinite(raw) ? Math.max(0, Math.min(5, Math.round(raw))) : 0;
+}
+
+function resolveInstructorName(
+  detail: {
+    instructor_name?: string | null;
+    teacher_name?: string | null;
+    instructor?: string | null;
+    full_name?: string | null;
+    teacher?: { full_name?: string | null } | null;
+  },
+  fallback?: string | null
+) {
+  return detail.instructor_name ?? detail.teacher_name ?? detail.full_name ?? detail.teacher?.full_name ?? detail.instructor ?? fallback ?? 'Digital Academy';
+}
+
+function resolveNumericValue(...values: Array<string | number | null | undefined>) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return 0;
+}
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -40,6 +87,9 @@ export function CourseDetail() {
   const [apiCourse, setApiCourse] = useState<Course | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(true);
   const [hasDetailError, setHasDetailError] = useState(false);
+  const [comments, setComments] = useState<CourseComment[]>([]);
+  const [isLoadingComments, setIsLoadingComments] = useState(true);
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   const { isAuthenticated, user, enrollInCourse } = useAuth();
   const { methods: paymentMethods, selectedMethodId, selectedMethod, selectMethod, removeMethod } = usePaymentMethods();
@@ -56,10 +106,41 @@ export function CourseDetail() {
   })();
 
   const course =
-    (stateCourse && (stateCourse.id === id || stateCourse.slug === id) ? stateCourse : undefined) ??
     apiCourse ??
+    (stateCourse && (stateCourse.id === id || stateCourse.slug === id) ? stateCourse : undefined) ??
     cachedCourses.find((c) => c.id === id || c.slug === id);
   const isEnrolled = !!user?.enrolledCourseIds?.includes(course?.id ?? '');
+  const commentCount = comments.length;
+  const averageRating = commentCount > 0
+    ? comments.reduce((sum, comment) => sum + getCommentRating(comment), 0) / commentCount
+    : Number(course?.rating ?? 0);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadComments = async () => {
+      if (!course?.id) return;
+
+      setIsLoadingComments(true);
+      setComments([]);
+      try {
+        const response = await courseApi.reviews(course.id);
+        const items = Array.isArray(response) ? response : [];
+        if (!active) return;
+        setComments(items as CourseComment[]);
+      } catch {
+        if (active) setComments([]);
+      } finally {
+        if (active) setIsLoadingComments(false);
+      }
+    };
+
+    loadComments();
+
+    return () => {
+      active = false;
+    };
+  }, [course?.id]);
 
   useEffect(() => {
     let active = true;
@@ -68,34 +149,73 @@ export function CourseDetail() {
       if (!id) return;
 
       // If we have the course from route state, skip fetch but mark loading done
-      if (stateCourse) {
-        if (active) setIsLoadingDetail(false);
-        return;
+      if (!stateCourse) {
+        if (active) setIsLoadingDetail(true);
+      } else if (active) {
+        setIsLoadingDetail(false);
       }
-
-      setIsLoadingDetail(true);
       setHasDetailError(false);
 
       try {
         const seed = cachedCourses.find((item) => item.id === id || item.slug === id);
         const lookupId = seed?.slug ?? id;
         const detail = await courseApi.publicDetail(lookupId);
+        const publicCourses = await courseApi.userCourses().catch(() => null);
+        const publicSeed = publicCourses?.data?.find((item) => item.id === id || item.slug === id) ?? null;
         if (!active || !detail) return;
+
+        const detailRecord = detail as {
+          avg_rating?: number;
+          average_rating?: number;
+          rating?: number;
+          students_count?: number;
+          students?: number;
+          review_count?: number;
+          reviews_count?: number;
+          ratings_count?: number;
+          comments_count?: number;
+        };
 
         setApiCourse({
           id: detail.id ?? seed?.id ?? id,
           slug: detail.slug ?? seed?.slug ?? id,
           title: detail.title ?? seed?.title ?? 'Untitled course',
-          instructor: seed?.instructor ?? 'Digital Academy',
-          rating: seed?.rating ?? 4.7,
-          reviewCount: seed?.reviewCount ?? 0,
+          instructor: resolveInstructorName(
+            {
+              instructor_name: detail.instructor_name,
+              teacher_name: detail.teacher_name,
+              instructor: detail.instructor,
+              full_name: (detail as { full_name?: string | null }).full_name,
+              teacher: (detail as { teacher?: { full_name?: string | null } | null }).teacher,
+            },
+            publicSeed?.instructor_name ?? publicSeed?.teacher_name ?? seed?.instructor
+          ),
+          rating: resolveNumericValue(
+            publicSeed?.avg_rating,
+            detailRecord.avg_rating,
+            detailRecord.average_rating,
+            detailRecord.rating,
+            seed?.rating
+          ),
+          reviewCount: resolveNumericValue(
+            (publicSeed as { review_count?: number; reviews_count?: number; ratings_count?: number; comments_count?: number } | null)?.review_count,
+            (publicSeed as { review_count?: number; reviews_count?: number; ratings_count?: number; comments_count?: number } | null)?.reviews_count,
+            (publicSeed as { review_count?: number; reviews_count?: number; ratings_count?: number; comments_count?: number } | null)?.ratings_count,
+            (publicSeed as { review_count?: number; reviews_count?: number; ratings_count?: number; comments_count?: number } | null)?.comments_count,
+            detailRecord.review_count,
+            detailRecord.reviews_count,
+            detailRecord.ratings_count,
+            detailRecord.comments_count,
+            seed?.reviewCount,
+            comments.length
+          ),
           price: detail.discount_price ?? detail.base_price ?? seed?.price ?? 0,
           originalPrice: detail.base_price ?? seed?.originalPrice,
           image: detail.cover_img ?? seed?.image ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
           category: seed?.category ?? 'development',
           level: seed?.level ?? 'All Levels',
           duration: seed?.duration ?? 'Self-paced',
-          students: seed?.students ?? 0,
+          students: resolveNumericValue(publicSeed?.students_count, detailRecord.students_count, detailRecord.students, seed?.students),
           description: detail.desc ?? seed?.description ?? '',
           lastUpdated: seed?.lastUpdated ?? '2026',
           language: seed?.language ?? 'English',
@@ -247,13 +367,13 @@ export function CourseDetail() {
 
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold">{course.rating.toFixed(1)}</span>
+                  <span className="font-bold">{averageRating.toFixed(1)}</span>
                   <div className="flex">
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
                         className={`w-4 h-4 ${
-                          i < Math.floor(course.rating)
+                          i < Math.floor(averageRating)
                             ? 'fill-yellow-400 text-yellow-400'
                             : 'text-gray-400'
                         }`}
@@ -261,7 +381,7 @@ export function CourseDetail() {
                     ))}
                   </div>
                   <span className="text-sm text-purple-300">
-                    ({course.reviewCount.toLocaleString()} ratings)
+                    ({commentCount.toLocaleString()} ratings)
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
@@ -446,21 +566,23 @@ export function CourseDetail() {
                 <h2 className="text-3xl font-bold text-gray-900 dark:text-slate-100">Comments</h2>
               </div>
               <div className="inline-flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-800 px-4 py-3 border border-purple-100 dark:border-slate-700">
-                <div className="text-3xl font-bold leading-none text-gray-900 dark:text-slate-100">{course.rating.toFixed(1)}</div>
+                <div className="text-3xl font-bold leading-none text-gray-900 dark:text-slate-100">
+                  {averageRating.toFixed(1)}
+                </div>
                 <div>
                   <div className="flex">
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
                         className={`w-4 h-4 ${
-                          i < Math.floor(course.rating)
+                          i < Math.floor(averageRating)
                             ? 'fill-yellow-400 text-yellow-400'
                             : 'text-gray-300'
                         }`}
                       />
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{course.reviewCount.toLocaleString()} comments</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{commentCount.toLocaleString()} comments</p>
                 </div>
               </div>
             </div>
@@ -489,13 +611,43 @@ export function CourseDetail() {
                   <Button
                     size="sm"
                     className="mt-3 bg-purple-600 hover:bg-purple-700"
-                    onClick={() => {
-                      toast.success('Comment submitted!');
-                      setReviewComment('');
-                      setReviewRating(0);
+                    disabled={isSubmittingComment || reviewComment.trim().length === 0 || reviewRating === 0}
+                    onClick={async () => {
+                      if (!course?.id) return;
+
+                      try {
+                        setIsSubmittingComment(true);
+
+                        const savedComment = await courseApi.addReview(course.id, {
+                          rating: reviewRating,
+                          comment: reviewComment.trim(),
+                        });
+
+                        toast.success('Comment submitted!');
+                        setReviewComment('');
+                        setReviewRating(0);
+
+                        const updated = await courseApi.reviews(course.id);
+                        if (Array.isArray(updated) && updated.length > 0) {
+                          setComments(updated as CourseComment[]);
+                          return;
+                        }
+
+                        if (savedComment && typeof savedComment === 'object') {
+                          setComments((current) => {
+                            const nextComment = savedComment as CourseComment;
+                            if (!nextComment.id) return current;
+                            return [nextComment, ...current.filter((comment) => comment.id !== nextComment.id)];
+                          });
+                        }
+                      } catch {
+                        toast.error('Could not submit comment.');
+                      } finally {
+                        setIsSubmittingComment(false);
+                      }
                     }}
                   >
-                    Submit Comment
+                    {isSubmittingComment ? 'Submitting...' : 'Submit Comment'}
                   </Button>
                 </CardContent>
               </Card>
@@ -510,32 +662,48 @@ export function CourseDetail() {
             ) : null}
 
             <div className="space-y-4">
-              {[1, 2, 3, 4].map((review) => (
-                <Card key={review} className="border-purple-100/80 dark:border-slate-700 hover:shadow-md transition-shadow">
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white font-semibold shrink-0">
-                        U{review}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="font-semibold text-gray-900 dark:text-slate-100">User {review}</span>
-                          <span className="text-xs text-gray-400 dark:text-slate-500">• 2 weeks ago</span>
-                        </div>
-                        <div className="flex mb-2">
-                          {[...Array(5)].map((_, i) => (
-                            <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          ))}
-                        </div>
-                        <p className="text-sm leading-relaxed text-gray-700 dark:text-slate-300">
-                          Very useful course. The explanations are clear, the practical examples are strong,
-                          and the learning flow is easy to follow. Recommended.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
+              {isLoadingComments ? (
+                <Card className="border-purple-100/80 dark:border-slate-700">
+                  <CardContent className="p-5 text-sm text-gray-500 dark:text-slate-400">Loading comments...</CardContent>
                 </Card>
-              ))}
+              ) : comments.length > 0 ? (
+                comments.map((review, index) => {
+                  const rating = getCommentRating(review);
+                  const author = getCommentAuthor(review, index);
+                  const createdAt = review.created_at ?? review.createdAt ?? '';
+                  const dateLabel = createdAt ? new Date(createdAt).toLocaleDateString() : 'Recently';
+
+                  return (
+                    <Card key={review.id ?? `${author}-${index}`} className="border-purple-100/80 dark:border-slate-700 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex items-start gap-4">
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white font-semibold shrink-0">
+                            {author.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className="font-semibold text-gray-900 dark:text-slate-100">{author}</span>
+                              <span className="text-xs text-gray-400 dark:text-slate-500">• {dateLabel}</span>
+                            </div>
+                            <div className="flex mb-2">
+                              {[...Array(5)].map((_, i) => (
+                                <Star key={i} className={`w-4 h-4 ${i < rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />
+                              ))}
+                            </div>
+                            <p className="text-sm leading-relaxed text-gray-700 dark:text-slate-300">
+                              {getCommentText(review) || 'No comment text provided.'}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              ) : (
+                <Card className="border-purple-100/80 dark:border-slate-700">
+                  <CardContent className="p-5 text-sm text-gray-500 dark:text-slate-400">No comments yet.</CardContent>
+                </Card>
+              )}
             </div>
           </section>
 
