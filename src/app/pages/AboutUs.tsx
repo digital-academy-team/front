@@ -17,17 +17,17 @@ export default function AboutUs() {
       </section>
 
       {/* Mission */}
-      <section className="py-20">
+      <section className="py-20 dark:bg-slate-950">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-10 xl:gap-16 items-center">
             <div>
-              <h2 className="text-3xl font-bold mb-6">Our Mission</h2>
-              <p className="text-gray-600 text-lg leading-relaxed mb-4">
+              <h2 className="text-3xl font-bold mb-6 dark:text-slate-100">Our Mission</h2>
+              <p className="text-gray-600 dark:text-slate-400 text-lg leading-relaxed mb-4">
                 Digital Academy was founded with a simple belief: everyone deserves access to
                 quality education. We work with expert instructors to create courses that are
                 engaging, up-to-date, and genuinely useful in the real world.
               </p>
-              <p className="text-gray-600 text-lg leading-relaxed mb-8">
+              <p className="text-gray-600 dark:text-slate-400 text-lg leading-relaxed mb-8">
                 From coding bootcamps to business strategy, design thinking to data science,
                 our library of 210,000+ courses covers virtually every professional skill.
               </p>
@@ -38,25 +38,25 @@ export default function AboutUs() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-purple-50 p-6 rounded-xl text-center">
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-xl text-center">
                 <GraduationCap className="w-10 h-10 text-purple-600 mx-auto mb-3" />
                 <div className="text-3xl font-bold text-purple-600 mb-1">65M+</div>
-                <div className="text-gray-600 font-medium">Students</div>
+                <div className="text-gray-600 dark:text-slate-400 font-medium">Students</div>
               </div>
-              <div className="bg-purple-50 p-6 rounded-xl text-center">
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-xl text-center">
                 <Users className="w-10 h-10 text-purple-600 mx-auto mb-3" />
                 <div className="text-3xl font-bold text-purple-600 mb-1">75K+</div>
-                <div className="text-gray-600 font-medium">Instructors</div>
+                <div className="text-gray-600 dark:text-slate-400 font-medium">Instructors</div>
               </div>
-              <div className="bg-purple-50 p-6 rounded-xl text-center">
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-xl text-center">
                 <Globe className="w-10 h-10 text-purple-600 mx-auto mb-3" />
                 <div className="text-3xl font-bold text-purple-600 mb-1">75+</div>
-                <div className="text-gray-600 font-medium">Languages</div>
+                <div className="text-gray-600 dark:text-slate-400 font-medium">Languages</div>
               </div>
-              <div className="bg-purple-50 p-6 rounded-xl text-center">
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-xl text-center">
                 <Award className="w-10 h-10 text-purple-600 mx-auto mb-3" />
                 <div className="text-3xl font-bold text-purple-600 mb-1">210K+</div>
-                <div className="text-gray-600 font-medium">Courses</div>
+                <div className="text-gray-600 dark:text-slate-400 font-medium">Courses</div>
               </div>
             </div>
           </div>
@@ -64,36 +64,36 @@ export default function AboutUs() {
       </section>
 
       {/* Values */}
-      <section className="py-20 bg-gray-50">
+      <section className="py-20 bg-gray-50 dark:bg-slate-900">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8">
-          <h2 className="text-3xl font-bold text-center mb-12">What We Stand For</h2>
+          <h2 className="text-3xl font-bold text-center mb-12 dark:text-slate-100">What We Stand For</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-xl shadow-sm">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl">🌍</span>
               </div>
-              <h3 className="text-xl font-bold mb-3">Accessible Education</h3>
-              <p className="text-gray-600">
+              <h3 className="text-xl font-bold mb-3 dark:text-slate-100">Accessible Education</h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 We believe quality education should be available to everyone, regardless of
                 geography or background. Our platform is accessible in 75+ languages.
               </p>
             </div>
-            <div className="bg-white p-8 rounded-xl shadow-sm">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl">🚀</span>
               </div>
-              <h3 className="text-xl font-bold mb-3">Career Transformation</h3>
-              <p className="text-gray-600">
+              <h3 className="text-xl font-bold mb-3 dark:text-slate-100">Career Transformation</h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 We help students start new careers, advance in current ones, and build
                 real-world skills that employers value. Our courses are built for outcomes.
               </p>
             </div>
-            <div className="bg-white p-8 rounded-xl shadow-sm">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl">🤝</span>
               </div>
-              <h3 className="text-xl font-bold mb-3">Instructor Partnership</h3>
-              <p className="text-gray-600">
+              <h3 className="text-xl font-bold mb-3 dark:text-slate-100">Instructor Partnership</h3>
+              <p className="text-gray-600 dark:text-slate-400">
                 Our instructors are the heart of Digital Academy. We provide the tools,
                 audience, and support for experts to share their knowledge and earn income.
               </p>

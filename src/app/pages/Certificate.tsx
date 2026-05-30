@@ -9,7 +9,7 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { useAuth } from '@/app/store/AuthContext';
 import { courseApi, resolveCourseId } from '@/app/services/api';
-import { courses, type Course } from '@/app/data/courses';
+import { type Course } from '@/app/data/courses';
 import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
 
 interface CertificateCourseData {
@@ -74,10 +74,8 @@ export default function Certificate() {
           return item.id === routeId || resolved === routeId;
         });
 
-        const cached = loadCachedCourses();
-        const localPool = [...cached, ...courses];
         const apiPool = (publicCoursesRes.data ?? []).map(mapApiCourseToCourse);
-        const allCourses = [...apiPool, ...localPool];
+        const allCourses = [...apiPool, ...loadCachedCourses()];
 
         const resolvedCourseId = resolveCourseId(enrolled?.course ?? null);
         const match = allCourses.find((item) => item.id === routeId || item.slug === routeId || item.id === resolvedCourseId);
@@ -151,9 +149,9 @@ export default function Certificate() {
 
   if (loading) {
     return (
-      <div className="max-w-6xl mx-auto px-4 py-16">
+      <div className="max-w-6xl mx-auto px-4 py-16 dark:bg-slate-950 min-h-screen">
         <Card>
-          <CardContent className="py-16 text-center text-gray-600 flex items-center justify-center gap-3">
+          <CardContent className="py-16 text-center text-gray-600 dark:text-slate-400 flex items-center justify-center gap-3">
             <Loader2 className="w-5 h-5 animate-spin" />
             Preparing your certificate...
           </CardContent>
@@ -164,11 +162,11 @@ export default function Certificate() {
 
   if (!user || !courseData) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16">
+      <div className="max-w-4xl mx-auto px-4 py-16 dark:bg-slate-950 min-h-screen">
         <Card>
           <CardContent className="py-16 text-center">
-            <h1 className="text-2xl font-bold mb-2">Certificate Unavailable</h1>
-            <p className="text-gray-600 mb-6">We could not find your certificate details for this course.</p>
+            <h1 className="text-2xl font-bold mb-2 dark:text-slate-100">Certificate Unavailable</h1>
+            <p className="text-gray-600 dark:text-slate-400 mb-6">We could not find your certificate details for this course.</p>
             <Link to="/profile?tab=credentials">
               <Button>Back to Credentials</Button>
             </Link>
@@ -179,11 +177,11 @@ export default function Certificate() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 dark:bg-slate-950 min-h-screen">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-amber-900">Certificate Of Completion</h1>
-          <p className="text-amber-800/80 mt-1">Issued by Digital Academy</p>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-amber-900 dark:text-amber-400">Certificate Of Completion</h1>
+          <p className="text-amber-800/80 dark:text-amber-500/80 mt-1">Issued by Digital Academy</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -206,7 +204,7 @@ export default function Certificate() {
         </div>
       </div>
 
-      <div className="rounded-2xl p-3 bg-gradient-to-br from-amber-200 via-yellow-100 to-orange-200 shadow-xl">
+      <div className="rounded-2xl p-3 bg-gradient-to-br from-amber-200 via-yellow-100 to-orange-200 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 shadow-xl">
         <div
           ref={certificateRef}
           className="relative overflow-hidden rounded-xl border border-amber-300 bg-[#f6f0de] p-6 md:p-10 min-h-[520px]"
@@ -256,9 +254,9 @@ export default function Certificate() {
         </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-5 flex items-center justify-between text-sm text-gray-600 dark:text-slate-400">
         <span>Includes your full name and course details.</span>
-        <Link to="/profile?tab=credentials" className="inline-flex items-center gap-1 text-amber-800 hover:text-amber-900 font-medium">
+        <Link to="/profile?tab=credentials" className="inline-flex items-center gap-1 text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 font-medium">
           <Download className="w-4 h-4" />
           Back to Credentials
         </Link>

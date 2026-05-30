@@ -2,7 +2,7 @@
 dist/
 build/
 node_modules/
-
+back
 
 # OS-generated files
 .DS_Store
@@ -11,3 +11,13 @@ node_modules/
 .claude/
 .idea/
 .vscode/
+
+# Local env overrides (keep .env.production and .env.example tracked)
+.env.local
+.env.*.local
+.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

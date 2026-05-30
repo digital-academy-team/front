@@ -23,12 +23,26 @@ export interface CartItem {
   image: string;
 }
 
+export interface PaymentMethod {
+  id: string;
+  nickname: string;
+  holderName: string;
+  cardNumber: string;
+  expiry: string;
+  cvv: string;
+  createdAt: string;
+}
+
 export interface Notification {
   id: string;
   message: string;
   read: boolean;
   createdAt: string;
   link?: string;
+  /** Optional short headline shown bold above the message. */
+  title?: string;
+  /** Backend notification type, e.g. ASSIGNMENT_SUBMITTED / ASSIGNMENT_GRADED. */
+  type?: string;
 }
 
 export interface Review {

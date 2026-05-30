@@ -4,19 +4,30 @@ import './styles/index.css'
 import App from './app/App'
 import { AuthProvider } from './app/store/AuthContext'
 import { CartProvider } from './app/store/CartContext'
+import { PaymentMethodsProvider } from './app/store/PaymentMethodsContext'
+import { WishlistProvider } from './app/store/WishlistContext'
+import { ThemeProvider } from './app/store/ThemeContext'
 import { Toaster } from 'sonner'
-
-// Ensure no stale dark class from a previous session
-document.documentElement.classList.remove('dark')
-localStorage.removeItem('da_theme')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <CartProvider>
-        <App />
-        <Toaster position="top-right" richColors />
-      </CartProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <CartProvider>
+          <PaymentMethodsProvider>
+            <WishlistProvider>
+              <App />
+              <Toaster
+                position="top-right"
+                richColors
+                closeButton
+                duration={3500}
+                expand={false}
+              />
+            </WishlistProvider>
+          </PaymentMethodsProvider>
+        </CartProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

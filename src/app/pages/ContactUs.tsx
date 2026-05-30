@@ -29,36 +29,36 @@ export default function ContactUs() {
         </div>
       </section>
 
-      <section className="py-20">
+      <section className="py-20 dark:bg-slate-950">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 xl:px-8">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 xl:gap-12">
 
             {/* Contact Info */}
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold mb-6">Get in Touch</h2>
+              <h2 className="text-2xl font-bold mb-6 dark:text-slate-100">Get in Touch</h2>
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Mail className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold mb-1">Email</h3>
-                  <p className="text-gray-600 text-sm">support@digitalacademy.com</p>
-                  <p className="text-gray-500 text-xs mt-1">We reply within 24 hours</p>
+                  <h3 className="font-semibold mb-1 dark:text-slate-100">Email</h3>
+                  <p className="text-gray-600 dark:text-slate-400 text-sm">support@digitalacademy.com</p>
+                  <p className="text-gray-500 dark:text-slate-500 text-xs mt-1">We reply within 24 hours</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
                   <MessageSquare className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold mb-1">Live Chat</h3>
-                  <p className="text-gray-600 text-sm">Available Monday–Friday</p>
-                  <p className="text-gray-500 text-xs mt-1">9:00 AM – 6:00 PM UTC</p>
+                  <h3 className="font-semibold mb-1 dark:text-slate-100">Live Chat</h3>
+                  <p className="text-gray-600 dark:text-slate-400 text-sm">Available Monday–Friday</p>
+                  <p className="text-gray-500 dark:text-slate-500 text-xs mt-1">9:00 AM – 6:00 PM UTC</p>
                 </div>
               </div>
 
-              <div className="border-t pt-6 mt-6">
-                <h3 className="font-semibold mb-4">Quick Links</h3>
+              <div className="border-t dark:border-slate-700 pt-6 mt-6">
+                <h3 className="font-semibold mb-4 dark:text-slate-100">Quick Links</h3>
                 <ul className="space-y-3 text-sm">
                   <li>
                     <Link to="/help" className="flex items-center gap-2 text-purple-600 hover:underline">
@@ -84,11 +84,11 @@ export default function ContactUs() {
                   <Button onClick={() => setSubmitted(false)} variant="outline">Send Another Message</Button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="bg-white border rounded-xl p-8 shadow-sm space-y-5">
-                  <h2 className="text-2xl font-bold mb-2">Send a Message</h2>
+                <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-xl p-8 shadow-sm space-y-5">
+                  <h2 className="text-2xl font-bold mb-2 dark:text-slate-100">Send a Message</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-1">
+                      <label className="block text-sm font-medium mb-1 dark:text-slate-200">
                         Full Name <span className="text-red-500">*</span>
                       </label>
                       <Input
@@ -98,7 +98,7 @@ export default function ContactUs() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">
+                      <label className="block text-sm font-medium mb-1 dark:text-slate-200">
                         Email Address <span className="text-red-500">*</span>
                       </label>
                       <Input
@@ -124,7 +124,7 @@ export default function ContactUs() {
                     <textarea
                       rows={6}
                       placeholder="Tell us how we can help..."
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                      className="w-full rounded-md border border-gray-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                       value={form.message}
                       onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
                     />

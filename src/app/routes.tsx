@@ -1,25 +1,38 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import { Layout } from './components/Layout';
-import { Home } from './pages/Home';
-import { CourseListing } from './pages/CourseListing';
-import { CourseDetail } from './pages/CourseDetail';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import RouteFallback from './components/RouteFallback';
+
+// Eager: initial-load chrome, auth pages hit frequently after logout
+import { Home } from './pages/Home';
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import AuthCallback from './pages/auth/AuthCallback';
 import SetInitialPassword from './pages/auth/SetInitialPassword';
-import NotFound from './pages/NotFound';
-import Cart from './pages/Cart';
-import Checkout from './pages/Checkout';
-import InstructorDashboard from './pages/instructor/InstructorDashboard';
-import Learn from './pages/Learn';
-import Search from './pages/Search';
-import Profile from './pages/Profile';
-import Certificate from './pages/Certificate';
-import Help from './pages/Help';
-import AboutUs from './pages/AboutUs';
-import ContactUs from './pages/ContactUs';
+
+// Lazy: post-auth pages and heavy content pages
+const CourseListing = lazy(() =>
+  import('./pages/CourseListing').then((m) => ({ default: m.CourseListing }))
+);
+const CourseDetail = lazy(() =>
+  import('./pages/CourseDetail').then((m) => ({ default: m.CourseDetail }))
+);
+const Cart = lazy(() => import('./pages/Cart'));
+const Checkout = lazy(() => import('./pages/Checkout'));
+const StudentDashboard = lazy(() => import('./pages/dashboard/StudentDashboard'));
+const InstructorDashboard = lazy(() => import('./pages/instructor/InstructorDashboard'));
+const Learn = lazy(() => import('./pages/Learn'));
+const Search = lazy(() => import('./pages/Search'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Certificate = lazy(() => import('./pages/Certificate'));
+const Help = lazy(() => import('./pages/Help'));
+const AboutUs = lazy(() => import('./pages/AboutUs'));
+const ContactUs = lazy(() => import('./pages/ContactUs'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Leaderboard = lazy(() => import('./pages/Leaderboard'));
+const QuizHistory = lazy(() => import('./pages/QuizHistory'));
 
 export const router = createBrowserRouter([
   // Standalone pages (no Layout)
@@ -55,7 +68,9 @@ export const router = createBrowserRouter([
     path: '/learn/:courseId',
     element: (
       <ProtectedRoute>
-        <Learn />
+        <Suspense fallback={<RouteFallback />}>
+          <Learn />
+        </Suspense>
       </ProtectedRoute>
     ),
   },
@@ -70,25 +85,43 @@ export const router = createBrowserRouter([
       },
       {
         path: 'courses',
-        Component: CourseListing,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <CourseListing />
+          </Suspense>
+        ),
       },
       {
         path: 'course/:id',
-        Component: CourseDetail,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <CourseDetail />
+          </Suspense>
+        ),
       },
       {
         path: 'search',
-        Component: Search,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <Search />
+          </Suspense>
+        ),
       },
       {
         path: 'cart',
-        Component: Cart,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <Cart />
+          </Suspense>
+        ),
       },
       {
         path: 'checkout',
         element: (
           <ProtectedRoute>
-            <Checkout />
+            <Suspense fallback={<RouteFallback />}>
+              <Checkout />
+            </Suspense>
           </ProtectedRoute>
         ),
       },
@@ -101,7 +134,9 @@ export const router = createBrowserRouter([
         path: 'instructor',
         element: (
           <ProtectedRoute requireRole="instructor">
-            <InstructorDashboard />
+            <Suspense fallback={<RouteFallback />}>
+              <InstructorDashboard />
+            </Suspense>
           </ProtectedRoute>
         ),
       },
@@ -109,7 +144,29 @@ export const router = createBrowserRouter([
         path: 'profile',
         element: (
           <ProtectedRoute>
-            <Profile />
+            <Suspense fallback={<RouteFallback />}>
+              <Profile />
+            </Suspense>
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'leaderboard',
+        element: (
+          <ProtectedRoute>
+            <Suspense fallback={<RouteFallback />}>
+              <Leaderboard />
+            </Suspense>
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'profile/quiz-history',
+        element: (
+          <ProtectedRoute>
+            <Suspense fallback={<RouteFallback />}>
+              <QuizHistory />
+            </Suspense>
           </ProtectedRoute>
         ),
       },
@@ -117,25 +174,43 @@ export const router = createBrowserRouter([
         path: 'certificate/:courseId',
         element: (
           <ProtectedRoute>
-            <Certificate />
+            <Suspense fallback={<RouteFallback />}>
+              <Certificate />
+            </Suspense>
           </ProtectedRoute>
         ),
       },
       {
         path: 'help',
-        Component: Help,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <Help />
+          </Suspense>
+        ),
       },
       {
         path: 'about',
-        Component: AboutUs,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <AboutUs />
+          </Suspense>
+        ),
       },
       {
         path: 'contact',
-        Component: ContactUs,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <ContactUs />
+          </Suspense>
+        ),
       },
       {
         path: '*',
-        Component: NotFound,
+        element: (
+          <Suspense fallback={<RouteFallback />}>
+            <NotFound />
+          </Suspense>
+        ),
       },
     ],
   },
