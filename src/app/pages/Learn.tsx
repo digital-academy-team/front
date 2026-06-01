@@ -1,7 +1,4 @@
-// Learn page — multi-kind lesson runner.
-// Supports the new lesson taxonomy (VIDEO / ARTICLE / CHEATSHEET / EXERCISE /
-// QUIZ / ASSIGNMENT / RESOURCE / DISCUSSION) and stays backwards-compatible
-// with the legacy {video + quizzes} payload via inferKind().
+// Learn page — renders a lesson by its kind.
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router';

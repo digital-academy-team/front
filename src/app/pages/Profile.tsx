@@ -149,45 +149,22 @@ export default function Profile() {
         const allSources = [...publicCoursesFromApi, ...loadCachedPublicCourses()];
         const localEnrolledIds = user?.enrolledCourseIds ?? [];
 
-        const apiList: ProfileEnrolledCourse[] = await Promise.all((myCoursesRes.data ?? []).map(async (item) => {
+        const apiList: ProfileEnrolledCourse[] = (myCoursesRes.data ?? []).map((item) => {
           const courseId = resolveCourseId(item.course);
           const fromPublicApi = publicCoursesFromApi.find((c) => c.id === courseId || c.slug === courseId);
           const fromLocal = allSources.find((c) => c.id === courseId || c.slug === courseId);
-          const detail = await courseApi.myEnrolledCourseDetail(item.id).catch(() => null);
-          const detailData = detail?.data ?? null;
-          const detailLessons = detailData?.course?.units?.flatMap((unit) => unit.lessons ?? []) ?? [];
-          const detailTotalLectures = detailLessons.length;
-          const publicTotalLectures = (fromPublicApi ?? fromLocal)?.curriculum?.reduce((s, sec) => s + sec.lectures, 0) ?? 0;
-          const totalLectures = detailTotalLectures || publicTotalLectures;
-          const completedLectures = Array.isArray(detailData?.completed_lectures)
-            ? detailData.completed_lectures
-            : Array.isArray(item.completed_lectures)
-              ? item.completed_lectures
-              : [];
-          const validLessonIds = new Set(detailLessons.map((lesson) => String(lesson.id)).filter(Boolean));
-          const completedCount = validLessonIds.size > 0
-            ? new Set(completedLectures.map(String).filter((lessonId) => validLessonIds.has(lessonId))).size
-            : completedLectures.length;
-          const completedPercent = totalLectures
-            ? Math.round((completedCount / totalLectures) * 100)
-            : 0;
-          const serverProgress = Math.max(0, Math.min(100, Number(detailData?.progress ?? item.progress) || 0));
-          const progress = completedLectures.length > 0
-            ? Math.max(0, Math.min(100, completedPercent))
-            : serverProgress;
-          const status = progress >= 100 ? 'COMPLETED' : (detailData?.status ?? item.status);
 
           return {
             enrollmentId: item.id,
             courseId,
-            progress,
-            status,
+            progress: Math.max(0, Math.min(100, Number(item.progress) || 0)),
+            status: item.status,
             title: fromPublicApi?.title ?? fromLocal?.title ?? 'Untitled course',
             instructor: fromPublicApi?.instructor ?? fromLocal?.instructor ?? 'Digital Academy',
             image: fromPublicApi?.image ?? fromLocal?.image ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
-            totalLectures,
+            totalLectures: (fromPublicApi ?? fromLocal)?.curriculum?.reduce((s, sec) => s + sec.lectures, 0) ?? 0,
           };
-        }));
+        });
 
         const fallbackList: ProfileEnrolledCourse[] = apiList.length > 0 || localEnrolledIds.length === 0
           ? apiList
@@ -548,7 +525,7 @@ export default function Profile() {
                             </p>
                           </div>
                           <div className="flex-shrink-0 flex flex-col gap-2">
-                            <Link to={`/learn/${course.courseId}`} state={{ returnTo: '/profile?tab=courses' }}>
+                            <Link to={`/learn/${course.courseId}`}>
                               <Button size="sm" className="bg-purple-600 hover:bg-purple-700 w-full">
                                 <Play className="w-3 h-3 mr-1" />
                                 {pct > 0 ? 'Continue' : 'Start'}
@@ -840,7 +817,7 @@ export default function Profile() {
                                 </Button>
                               </Link>
                             ) : (
-                              <Link to={`/learn/${course.courseId}`} state={{ returnTo: '/profile?tab=credentials' }}>
+                              <Link to={`/learn/${course.courseId}`}>
                                 <Button size="sm" variant="outline">
                                   <Play className="w-3 h-3 mr-1" /> Continue
                                 </Button>

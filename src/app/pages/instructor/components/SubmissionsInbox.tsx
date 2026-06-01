@@ -1,10 +1,4 @@
-// Tutor "Submissions" inbox — review and grade every student submission
-// across all of the tutor's courses in one place.
-//
-// Submissions are grouped per (lesson + student): all of a student's attempts
-// for one assignment sit together (newest first), each downloadable and
-// gradable, with the prior graded attempts kept as history. Different
-// assignments / students are separate cards.
+// Tutor inbox: submissions across their courses, grouped per student.
 
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { toast } from 'sonner';

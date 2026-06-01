@@ -1,5 +1,4 @@
-// Per-kind lesson renderer. One component per LessonKind.
-// Kept dependency-free and styled to match the existing Learn page.
+// Per-kind lesson renderers.
 
 import { useEffect, useState } from 'react';
 import { CheckCircle, Clock3, Download, ExternalLink, FileText, History, PencilLine, PlayCircle, Sparkles, Trophy } from 'lucide-react';

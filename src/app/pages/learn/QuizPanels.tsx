@@ -1,6 +1,4 @@
-// Extracted quiz idle/taking/results panels.
-// Shared by the standalone QUIZ lesson kind and by the optional quiz tab
-// on quiz-attachable kinds (VIDEO / ARTICLE / CHEATSHEET / EXERCISE).
+// Quiz panels: idle, taking, results.
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle, ClipboardList, Clock, Eye, EyeOff, Lightbulb, Star, Trophy } from 'lucide-react';

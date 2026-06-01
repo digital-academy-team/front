@@ -1,8 +1,4 @@
-// In-app notification bell + dropdown.
-//
-// Shows an unread badge and a scrollable list of the current user's
-// notifications. Works for both students and tutors. Uses the indigo brand
-// palette + slate surfaces (the project's "new design").
+// Notification bell with unread badge and dropdown.
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router';

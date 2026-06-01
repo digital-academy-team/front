@@ -1,8 +1,4 @@
-// Dependency-free, minimal Markdown-ish renderer.
-// Supports: # h1..### h3, **bold**, *italic*, `inline code`, ``` fenced code ```,
-// - bullet lists, numbered lists, [links](url), and paragraphs.
-// This is intentionally NOT a full CommonMark impl; it covers what tutors
-// realistically need for Reading / Cheatsheet / Exercise prompts.
+// Minimal markdown renderer.
 
 import { type JSX } from 'react';
 

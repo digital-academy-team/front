@@ -1,5 +1,4 @@
-// Lesson-kind shared types + helpers.
-// Used by Learn page renderers, Sidebar, and Instructor LessonEditor.
+// Lesson-kind shared types and helpers.
 
 import { BookOpen, ClipboardList, FileText, FlaskConical, MessageCircle, Paperclip, PencilLine, PlayCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';

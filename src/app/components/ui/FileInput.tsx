@@ -1,8 +1,4 @@
-// Polished drag-and-drop file picker.
-//
-// Replaces the default "Choose file / No file chosen" browser input
-// across the app. The native input is hidden visually but still gets
-// the file event (so accessibility + autofill still work).
+// Drag-and-drop file picker (single or multiple files).
 
 import { useId, useRef, useState } from 'react';
 import { File as FileIcon, Upload, X } from 'lucide-react';

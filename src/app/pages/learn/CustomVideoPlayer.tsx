@@ -1,9 +1,4 @@
-// Custom video player.
-//
-// Replaces the browser's default <video controls> chrome with our own
-// inline tools row (play/pause, scrub bar, 10s back/forward, volume,
-// playback speed, captions toggle, fullscreen). Captions arrive via the
-// `captions` URL set by the tutor on the lesson.
+// Custom video player with inline controls and captions.
 
 import { useEffect, useRef, useState } from 'react';
 import {

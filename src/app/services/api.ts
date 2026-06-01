@@ -418,7 +418,7 @@ export interface MyCourseDetailResponse {
         lessons: Array<{
           id: string;
           title: string;
-          // v2 lesson taxonomy fields — all optional for backwards compatibility.
+          // Optional lesson fields.
           kind?: LessonKindPayload | null;
           desc?: string | null;
           content_md?: string | null;

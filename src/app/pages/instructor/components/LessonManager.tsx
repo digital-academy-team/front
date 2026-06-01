@@ -167,7 +167,7 @@ export function LessonManager({ course, onClose, onChanged }: LessonManagerProps
   const [newUnitDesc, setNewUnitDesc] = useState('');
   const [creatingUnit, setCreatingUnit] = useState(false);
 
-  // Applied-steps activity log (Power Query style). Persisted per course.
+  // Activity log, persisted per course.
   const [steps, setSteps] = useState<ActivityStep[]>(() => {
     try {
       const raw = localStorage.getItem(STEPS_KEY(course.id));

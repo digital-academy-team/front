@@ -1,6 +1,4 @@
-// Tutor view: student submissions for one ASSIGNMENT lesson.
-// Grouped per student — every attempt (newest first) sits together, each
-// downloadable and gradable, with prior graded attempts kept as history.
+// Tutor view of a lesson's submissions, grouped per student.
 
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { toast } from 'sonner';
