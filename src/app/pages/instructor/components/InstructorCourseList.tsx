@@ -1,14 +1,17 @@
-import { Fragment, Dispatch, SetStateAction } from 'react';
-import { UserCourseItem } from '@/app/services/api';
+import { Fragment, Dispatch, SetStateAction, useState } from 'react';
+import { toast } from 'sonner';
+import { courseApi, UserCourseItem } from '@/app/services/api';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { EmptyState } from '@/app/components/ui/EmptyState';
+import { FileInput } from '@/app/components/ui/FileInput';
+import { Label } from '@/app/components/ui/label';
 import { CourseEditFormState } from '@/app/utils/instructorDashboard';
 import { UseInstructorCourseDetailResult } from '@/app/hooks/useInstructorCourseDetail';
-import { QuizEditor } from './QuizEditor';
-import { BookOpen } from 'lucide-react';
+import { LessonManager } from './LessonManager';
+import { BookOpen, Trash2, AlertTriangle } from 'lucide-react';
 
 interface InstructorCourseListProps {
   courses: UserCourseItem[];
@@ -21,6 +24,7 @@ interface InstructorCourseListProps {
   cancelEditCourse: () => void;
   handleUpdateCourse: () => Promise<void>;
   quizDetail: UseInstructorCourseDetailResult;
+  refetch: () => Promise<void>;
 }
 
 export function InstructorCourseList({
@@ -33,8 +37,34 @@ export function InstructorCourseList({
   startEditCourse,
   cancelEditCourse,
   handleUpdateCourse,
-  quizDetail,
+  refetch,
 }: InstructorCourseListProps) {
+  const [lessonManagerCourseId, setLessonManagerCourseId] = useState<string | null>(null);
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const startDelete = (id: string) => { setDeletingCourseId(id); setDeleteConfirm(''); };
+  const cancelDelete = () => { setDeletingCourseId(null); setDeleteConfirm(''); };
+
+  const handleDeleteCourse = async (course: UserCourseItem) => {
+    if (deleteConfirm.trim() !== course.title.trim()) {
+      toast.error('Type the exact course name to confirm.');
+      return;
+    }
+    try {
+      setDeleting(true);
+      await courseApi.remove(course.id);
+      toast.success(`“${course.title}” deleted.`);
+      cancelDelete();
+      await refetch();
+    } catch (err) {
+      toast.error((err as Error | undefined)?.message ?? 'Course could not be deleted.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div>
       <h2 className="text-xl font-bold mb-4 dark:text-slate-100">My Courses ({courses.length})</h2>
@@ -102,88 +132,174 @@ export function InstructorCourseList({
                         <Button type="button" variant="outline" onClick={() => startEditCourse(course)}>
                           Update
                         </Button>
-                        <Button type="button" variant="outline" onClick={() => quizDetail.startCreateQuiz(course.id, courses)}>
-                          Create Quiz
+                        <Button type="button" variant="outline" onClick={() => setLessonManagerCourseId(course.id)}>
+                          Add/Edit Lessons
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => startDelete(course.id)}
+                          className="gap-1.5 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-300 dark:hover:bg-red-500/10 dark:hover:text-red-400 dark:hover:border-red-500/40"
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete
                         </Button>
                       </div>
                     </td>
                   </tr>
 
                   {editingCourseId === course.id && editForm && (
-                    <tr className="border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60">
-                      <td colSpan={4} className="py-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <Input
-                            value={editForm.title}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, title: e.target.value } : prev))}
-                            placeholder="Title"
-                          />
-                          <Input
-                            type="number"
-                            min="0"
-                            value={editForm.base_price}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, base_price: Number(e.target.value) } : prev))}
-                            placeholder="Base price"
-                          />
-                          <Input
-                            type="number"
-                            min="0"
-                            value={editForm.discount_price}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, discount_price: Number(e.target.value) } : prev))}
-                            placeholder="Discount price"
-                          />
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="w-full text-sm"
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, cover_img: e.target.files?.[0] ?? null } : prev))}
-                          />
-                          <div className="md:col-span-2">
-                            <Textarea
-                              value={editForm.desc}
-                              onChange={e => setEditForm(prev => (prev ? { ...prev, desc: e.target.value } : prev))}
-                              placeholder="Description"
-                            />
+                    <tr className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                      <td colSpan={4} className="p-4">
+                        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm p-5">
+                          <div className="mb-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+                              Edit course
+                            </p>
+                            <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                              Update “{course.title}”
+                            </h4>
                           </div>
-                        </div>
 
-                        <div className="flex gap-2 mt-3">
-                          <Button
-                            type="button"
-                            className="bg-purple-600 hover:bg-purple-700"
-                            disabled={isUpdatingCourse}
-                            onClick={handleUpdateCourse}
-                          >
-                            {isUpdatingCourse ? 'Updating...' : 'Save Update'}
-                          </Button>
-                          <Button type="button" variant="outline" onClick={cancelEditCourse}>
-                            Cancel
-                          </Button>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2 space-y-1.5">
+                              <Label htmlFor={`edit-title-${course.id}`} className="text-slate-700 dark:text-slate-300">
+                                Course title
+                              </Label>
+                              <Input
+                                id={`edit-title-${course.id}`}
+                                value={editForm.title}
+                                onChange={e => setEditForm(prev => (prev ? { ...prev, title: e.target.value } : prev))}
+                                placeholder="e.g. Modern React from Scratch"
+                                className="bg-white dark:bg-slate-900"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`edit-base-${course.id}`} className="text-slate-700 dark:text-slate-300">
+                                Base price
+                              </Label>
+                              <Input
+                                id={`edit-base-${course.id}`}
+                                type="number"
+                                min="0"
+                                value={editForm.base_price}
+                                onChange={e => setEditForm(prev => (prev ? { ...prev, base_price: Number(e.target.value) } : prev))}
+                                placeholder="0"
+                                className="bg-white dark:bg-slate-900"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`edit-discount-${course.id}`} className="text-slate-700 dark:text-slate-300">
+                                Discount price
+                              </Label>
+                              <Input
+                                id={`edit-discount-${course.id}`}
+                                type="number"
+                                min="0"
+                                value={editForm.discount_price}
+                                onChange={e => setEditForm(prev => (prev ? { ...prev, discount_price: Number(e.target.value) } : prev))}
+                                placeholder="0"
+                                className="bg-white dark:bg-slate-900"
+                              />
+                            </div>
+
+                            <div className="md:col-span-2 space-y-1.5">
+                              <Label className="text-slate-700 dark:text-slate-300">Cover image</Label>
+                              <FileInput
+                                variant="image"
+                                accept="image/*"
+                                value={editForm.cover_img}
+                                existingUrl={course.cover_img ?? undefined}
+                                existingLabel="Current cover image"
+                                label="Course cover image"
+                                hint="JPG or PNG · 1280×720 recommended"
+                                onChange={file => setEditForm(prev => (prev ? { ...prev, cover_img: file } : prev))}
+                              />
+                            </div>
+
+                            <div className="md:col-span-2 space-y-1.5">
+                              <Label htmlFor={`edit-desc-${course.id}`} className="text-slate-700 dark:text-slate-300">
+                                Description
+                              </Label>
+                              <Textarea
+                                id={`edit-desc-${course.id}`}
+                                value={editForm.desc}
+                                onChange={e => setEditForm(prev => (prev ? { ...prev, desc: e.target.value } : prev))}
+                                placeholder="What will students learn in this course?"
+                                className="min-h-[96px] bg-white dark:bg-slate-900"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-slate-200 dark:border-slate-800">
+                            <Button type="button" variant="outline" onClick={cancelEditCourse}>
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm"
+                              disabled={isUpdatingCourse}
+                              onClick={handleUpdateCourse}
+                            >
+                              {isUpdatingCourse ? 'Saving…' : 'Save changes'}
+                            </Button>
+                          </div>
                         </div>
                       </td>
                     </tr>
                   )}
 
-                  {quizDetail.quizCourseId === course.id && (
+                  {deletingCourseId === course.id && (
+                    <tr className="border-b dark:border-slate-700 bg-red-50/60 dark:bg-red-500/5">
+                      <td colSpan={4} className="p-4">
+                        <div className="rounded-2xl border border-red-300 dark:border-red-500/40 bg-white dark:bg-slate-950 shadow-sm p-5 max-w-xl">
+                          <div className="flex items-start gap-3">
+                            <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-red-100 dark:bg-red-500/15 text-red-600 dark:text-red-400 shrink-0">
+                              <AlertTriangle className="w-5 h-5" />
+                            </span>
+                            <div className="min-w-0">
+                              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">Delete this course?</h4>
+                              <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+                                This permanently deletes <strong className="text-slate-900 dark:text-slate-100">{course.title}</strong> with
+                                all its units, lessons, quizzes and submissions. This cannot be undone.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-4 space-y-1.5">
+                            <Label className="text-slate-700 dark:text-slate-300">
+                              Type <span className="font-semibold">{course.title}</span> to confirm
+                            </Label>
+                            <Input
+                              value={deleteConfirm}
+                              onChange={(e) => setDeleteConfirm(e.target.value)}
+                              placeholder={course.title}
+                              className="bg-white dark:bg-slate-900"
+                            />
+                          </div>
+                          <div className="flex items-center justify-end gap-2 mt-4">
+                            <Button type="button" variant="outline" onClick={cancelDelete}>Cancel</Button>
+                            <Button
+                              type="button"
+                              disabled={deleting || deleteConfirm.trim() !== course.title.trim()}
+                              onClick={() => handleDeleteCourse(course)}
+                              className="bg-red-600 hover:bg-red-500 text-white shadow-sm disabled:bg-red-300 dark:disabled:bg-red-500/30"
+                            >
+                              {deleting ? 'Deleting…' : 'Delete course'}
+                            </Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {lessonManagerCourseId === course.id && (
                     <tr className="border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60">
                       <td colSpan={4} className="py-3">
-                        <QuizEditor
-                          quizUnitId={quizDetail.quizUnitId}
-                          quizUnitOptions={quizDetail.quizUnitOptions}
-                          filteredQuizLessonOptions={quizDetail.filteredQuizLessonOptions}
-                          quizLessonId={quizDetail.quizLessonId}
-                          quizForm={quizDetail.quizForm}
-                          isCreatingQuiz={quizDetail.isCreatingQuiz}
-                          setQuizUnitId={quizDetail.setQuizUnitId}
-                          setQuizLessonId={quizDetail.setQuizLessonId}
-                          setQuizForm={quizDetail.setQuizForm}
-                          updateQuizQuestion={quizDetail.updateQuizQuestion}
-                          addQuizQuestion={quizDetail.addQuizQuestion}
-                          updateQuizVariantText={quizDetail.updateQuizVariantText}
-                          setQuizCorrectVariant={quizDetail.setQuizCorrectVariant}
-                          addQuizVariant={quizDetail.addQuizVariant}
-                          handleCreateQuizzes={quizDetail.handleCreateQuizzes}
-                          cancelCreateQuiz={quizDetail.cancelCreateQuiz}
+                        <LessonManager
+                          course={course}
+                          onClose={() => setLessonManagerCourseId(null)}
+                          onChanged={refetch}
                         />
                       </td>
                     </tr>

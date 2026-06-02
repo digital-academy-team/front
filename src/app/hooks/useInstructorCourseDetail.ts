@@ -225,6 +225,8 @@ export function useInstructorCourseDetail(): UseInstructorCourseDetailResult {
         lesson: quizLessonId,
         title: quizTitle,
         description: quizDescription,
+        time_limit_min: Math.max(0, Number(quizForm.time_limit_min) || 0),
+        show_timer: quizForm.show_timer !== false,
         questions: normalizedQuestions,
       });
       toast.success('Quiz created.');

@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { useAuth } from '@/app/store/AuthContext';
+import { NotificationBell } from './NotificationBell';
 import { useCart } from '@/app/store/CartContext';
 import { useTheme } from '@/app/store/ThemeContext';
 import { useDebouncedValue } from '@/app/hooks/useDebouncedValue';
@@ -260,6 +261,9 @@ export function Header() {
                 <Trophy className="w-4 h-4 text-white" aria-hidden="true" />
               </Link>
             )}
+
+            {/* Notifications — authenticated users (students + tutors) */}
+            {isAuthenticated && <NotificationBell />}
 
             {/* Cart icon — visible to everyone, count from CartContext */}
             <Link to="/cart" aria-label={`Cart with ${cartCount} item${cartCount === 1 ? '' : 's'}`}>

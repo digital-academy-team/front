@@ -39,6 +39,10 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   link?: string;
+  /** Optional short headline shown bold above the message. */
+  title?: string;
+  /** Backend notification type, e.g. ASSIGNMENT_SUBMITTED / ASSIGNMENT_GRADED. */
+  type?: string;
 }
 
 export interface Review {

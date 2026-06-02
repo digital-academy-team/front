@@ -1,7 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { User, AuthState, Notification, Transaction } from '@/app/types';
-import { authApi, courseApi, orderApi, leaderboardApi, resolveCourseId, setTokens, clearTokens, getAccessToken, Tier } from '@/app/services/api';
+import { authApi, courseApi, orderApi, leaderboardApi, notificationApi, resolveCourseId, setTokens, clearTokens, getAccessToken, Tier, type NotificationApiItem } from '@/app/services/api';
+
+const NOTIF_POLL_MS = 30000;
+
+function mapApiNotification(n: NotificationApiItem): Notification {
+  return {
+    id: n.id,
+    title: n.title || undefined,
+    message: n.message || n.title || '',
+    read: Boolean(n.is_read),
+    createdAt: n.created_at,
+    link: n.link || undefined,
+    type: n.type,
+  };
+}
 
 interface AuthContextType extends AuthState {
   apiAvailable: boolean;
@@ -9,6 +23,7 @@ interface AuthContextType extends AuthState {
   tier: Tier | null;
   leaderboardPosition: number | null;
   refreshGamification: () => Promise<void>;
+  refreshNotifications: () => Promise<void>;
   login: (email: string, password: string) => Promise<'student' | 'instructor'>;
   authenticateWithTokens: (
     access: string,
@@ -198,12 +213,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const seedNotifications = (name: string, dest: string) => {
-    setNotifications([
-      { id: 'n1', message: `Welcome back, ${name}!`, read: false, createdAt: new Date().toISOString(), link: dest },
-      { id: 'n2', message: 'New courses added in Web Development', read: false, createdAt: new Date(Date.now() - 86400000).toISOString(), link: '/courses' },
-      { id: 'n3', message: 'Complete your profile to get personalized recommendations', read: true, createdAt: new Date(Date.now() - 172800000).toISOString(), link: '/profile' },
-    ]);
+  const refreshNotifications = async () => {
+    if (!getAccessToken()) return;
+    try {
+      const { items } = await notificationApi.list();
+      setNotifications(items.map(mapApiNotification));
+    } catch {
+      // Non-critical — keep whatever is currently shown.
+    }
   };
 
   const syncStudentData = async () => {
@@ -248,6 +265,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshGamification();
   }, [state.isAuthenticated, state.user?.id, state.user?.role]);
 
+  // Notification polling — for every authenticated user (student or tutor).
+  useEffect(() => {
+    if (!state.isAuthenticated || !getAccessToken()) return;
+    refreshNotifications();
+    const interval = window.setInterval(refreshNotifications, NOTIF_POLL_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshNotifications(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [state.isAuthenticated, state.user?.id]);
+
   const login = async (email: string, password: string) => {
     try {
       const data = await authApi.login(email, password);
@@ -283,8 +313,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       setState({ user: u, isAuthenticated: true });
-      seedNotifications(u.name, role === 'instructor' ? '/instructor' : '/profile');
       setApiAvailable(true);
+      refreshNotifications();
       if (role === 'student') {
         await syncStudentData();
         await refreshGamification();
@@ -347,8 +377,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setState({ user: u, isAuthenticated: true });
-    seedNotifications(u.name, role === 'instructor' ? '/instructor' : '/profile');
     setApiAvailable(true);
+    refreshNotifications();
 
     if (role === 'student') {
       await syncStudentData().catch(() => {});
@@ -419,7 +449,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (idx >= 0) { users[idx] = updated; localStorage.setItem('da_users', JSON.stringify(users)); }
     const tx: Transaction = { id: crypto.randomUUID(), date: new Date().toISOString(), courseTitle, amount, status: 'completed' };
     setTransactions(prev => [tx, ...prev]);
-    setNotifications(prev => [{ id: crypto.randomUUID(), message: `You've enrolled in "${courseTitle}"!`, read: false, createdAt: new Date().toISOString(), link: '/dashboard' }, ...prev]);
 
     if (apiAvailable) {
       syncStudentData().catch(() => {
@@ -428,11 +457,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const markNotificationRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  const markAllNotificationsRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markNotificationRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    if (getAccessToken()) notificationApi.markRead(id).catch(() => {});
+  };
+  const markAllNotificationsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    if (getAccessToken()) notificationApi.markAllRead().catch(() => {});
+  };
 
   return (
-    <AuthContext.Provider value={{ ...state, apiAvailable, coin, tier, leaderboardPosition, refreshGamification, login, authenticateWithTokens, register, verifyRegistration, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
+    <AuthContext.Provider value={{ ...state, apiAvailable, coin, tier, leaderboardPosition, refreshGamification, refreshNotifications, login, authenticateWithTokens, register, verifyRegistration, logout, updateUser, enrollInCourse, notifications, markNotificationRead, markAllNotificationsRead, transactions }}>
       {children}
     </AuthContext.Provider>
   );

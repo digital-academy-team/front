@@ -11,3 +11,13 @@ back
 .claude/
 .idea/
 .vscode/
+
+# Local env overrides (keep .env.production and .env.example tracked)
+.env.local
+.env.*.local
+.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

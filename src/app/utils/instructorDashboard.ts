@@ -1,11 +1,42 @@
 // Types, factory helpers, pure helpers, and constants extracted from InstructorDashboard.
+//
+// v2: lesson form is now kind-aware. `kind` decides which fields the editor
+// renders and which fields the API layer should send.
+
+import type { LessonExerciseHint, LessonKind } from '@/app/pages/learn/lessonKind';
+import { DEFAULT_HINT_PENALTY_PERCENT } from '@/app/pages/learn/lessonKind';
+
+export interface LessonExerciseFormItem {
+  language: string;
+  starter_code: string;
+  solution: string;
+  /** Default penalty applied to newly added hints. */
+  hint_penalty_percent: number;
+  /** Each hint now carries its OWN penalty. */
+  hints: LessonExerciseHint[];
+}
 
 export interface LessonFormItem {
+  // Core
+  kind: LessonKind;
   title: string;
   desc: string;
-  additional_task: string;
+  duration_min: number;
+  // Body
+  content_md: string;             // ARTICLE, CHEATSHEET, EXERCISE intro, DISCUSSION prompt, RESOURCE description
+  additional_task: string;        // legacy: keep for VIDEO back-compat
+  // Files
   video: File | null;
+  captions: File | null;
   presentation: File | null;
+  // Type-specific
+  external_url: string;           // RESOURCE
+  assignment_instructions: string; // ASSIGNMENT
+  assignment_due_at: string;       // ISO date string, ASSIGNMENT
+  allow_multiple_files: boolean;   // ASSIGNMENT: let students attach several files
+  exercise: LessonExerciseFormItem; // EXERCISE
+  // Optional attached quiz
+  attach_quiz: boolean;            // if true and kind is quiz-attachable, parent form expects a quiz draft
 }
 
 export interface QuizVariantFormItem {
@@ -57,6 +88,8 @@ export interface CourseUnitOption {
 export interface QuizCreateFormState {
   title: string;
   description: string;
+  time_limit_min: number;
+  show_timer: boolean;
   questions: QuizQuestionFormItem[];
 }
 
@@ -74,15 +107,40 @@ export const createEmptyQuizQuestion = (): QuizQuestionFormItem => ({
 export const createEmptyQuizCreateForm = (): QuizCreateFormState => ({
   title: '',
   description: '',
+  time_limit_min: 0,
+  show_timer: true,
   questions: [createEmptyQuizQuestion()],
 });
 
-export const createEmptyLesson = (): LessonFormItem => ({
+export const createEmptyExercise = (): LessonExerciseFormItem => ({
+  language: 'javascript',
+  starter_code: '',
+  solution: '',
+  hint_penalty_percent: DEFAULT_HINT_PENALTY_PERCENT,
+  hints: [],
+});
+
+export const createEmptyHint = (penalty = DEFAULT_HINT_PENALTY_PERCENT): LessonExerciseHint => ({
+  text: '',
+  penalty_percent: penalty,
+});
+
+export const createEmptyLesson = (kind: LessonKind = 'VIDEO'): LessonFormItem => ({
+  kind,
   title: '',
   desc: '',
+  duration_min: 0,
+  content_md: '',
   additional_task: '',
   video: null,
+  captions: null,
   presentation: null,
+  external_url: '',
+  assignment_instructions: '',
+  assignment_due_at: '',
+  allow_multiple_files: false,
+  exercise: createEmptyExercise(),
+  attach_quiz: false,
 });
 
 export function extractCourseQuizOptions(source: unknown): {

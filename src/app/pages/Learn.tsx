@@ -1,75 +1,48 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router';
+// Learn page — renders a lesson by its kind.
+
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, Link, useLocation } from 'react-router';
 import { type Course } from '@/app/data/courses';
 import { courseQuizzes, type SectionQuiz } from '@/app/data/quizzes';
 import { Button } from '@/app/components/ui/button';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { ErrorState } from '@/app/components/ui/ErrorState';
-import { courseApi, resolveCourseId, type MyCourseDetailResponse, type QuizSubmitResultResponseExtended } from '@/app/services/api';
+import {
+  courseApi,
+  resolveCourseId,
+  type MyCourseDetailResponse,
+} from '@/app/services/api';
 import { useAuth } from '@/app/store/AuthContext';
+import { currentUserScope } from '@/app/utils/userScope';
 import { mapApiCourseToCourse } from '@/app/utils/courseMapper';
-import { ArrowLeft, CheckCircle, PlayCircle, Trophy, FileText, ClipboardList, ExternalLink, Star } from 'lucide-react';
+import { ArrowLeft, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { type ApiLesson, KIND_META, inferKind, kindAllowsQuizAttach } from './learn/lessonKind';
+import {
+  ArticleLessonRenderer,
+  AssignmentLessonRenderer,
+  CheatsheetLessonRenderer,
+  DiscussionLessonRenderer,
+  ExerciseLessonRenderer,
+  ResourceLessonRenderer,
+  VideoLessonRenderer,
+  type LessonRendererProps,
+} from './learn/LessonRenderer';
+import { LearnSidebar, type SidebarUnit } from './learn/LearnSidebar';
+import {
+  QuizIdle,
+  QuizResults,
+  QuizTaking,
+  mapApiQuizToUi,
+  resolveStars,
+  type QuizSubmitData,
+  type UiQuiz,
+} from './learn/QuizPanels';
 
 interface LectureProgress {
   completedLectures: string[];
 }
-
-interface UiQuizQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-  explanation?: string;
-  variantIds?: string[];
-}
-
-interface UiQuiz {
-  id: string;
-  title: string;
-  sectionIndex: number;
-  questions: UiQuizQuestion[];
-}
-
-type ApiQuiz = NonNullable<MyCourseDetailResponse['data']['course']['units'][number]['lessons'][number]['quizzes']>[number];
-
-interface CourseSection {
-  section: string;
-  lectures: number;
-  duration: string;
-}
-
-function mapApiQuizToUi(
-  quiz: ApiQuiz | undefined,
-  sectionIndex: number
-): UiQuiz | null {
-  if (!quiz || !Array.isArray(quiz.questions) || quiz.questions.length === 0) return null;
-
-  const questions: UiQuizQuestion[] = [];
-  for (const question of quiz.questions) {
-    const variants = Array.isArray(question.variants) ? question.variants : [];
-    const correctIndex = variants.findIndex((variant) => variant.is_correct);
-    if (variants.length === 0 || correctIndex < 0) continue;
-    questions.push({
-      id: question.id,
-      question: question.question_text,
-      options: variants.map((variant) => variant.text),
-      variantIds: variants.map((variant) => variant.id),
-      correctIndex,
-    });
-  }
-
-  if (questions.length === 0) return null;
-
-  return {
-    id: quiz.id,
-    title: quiz.title,
-    sectionIndex,
-    questions,
-  };
-}
-
-type QuizSubmitData = QuizSubmitResultResponseExtended['data'];
 
 interface QuizHistoryRecord {
   id: string;
@@ -113,233 +86,59 @@ function saveQuizHistoryEntry(userId: string, entry: QuizHistoryRecord) {
   }
 }
 
-function resolveStars(percent: number) {
-  if (percent >= 90) return 3;
-  if (percent >= 80) return 2;
-  if (percent >= 70) return 1;
-  return 0;
+type RendererComponent = (props: LessonRendererProps) => React.ReactNode;
+
+const KIND_TO_RENDERER: Record<string, RendererComponent> = {
+  VIDEO: VideoLessonRenderer,
+  ARTICLE: ArticleLessonRenderer,
+  CHEATSHEET: CheatsheetLessonRenderer,
+  EXERCISE: ExerciseLessonRenderer,
+  ASSIGNMENT: AssignmentLessonRenderer,
+  RESOURCE: ResourceLessonRenderer,
+  DISCUSSION: DiscussionLessonRenderer,
+};
+
+function lessonProgressKey(lesson: ApiLesson | undefined, unitIndex: number, lessonIndex: number) {
+  return lesson?.id || `${unitIndex}-${lessonIndex}`;
 }
 
-function resultCopy({
-  status,
-  attempt,
-  percent,
-  hasTier,
-  coinEarned,
-}: {
-  status: string;
-  attempt: number;
-  percent: number;
-  hasTier: boolean;
-  coinEarned: number;
-}): string {
-  if (status === 'PASSED' && attempt === 1 && hasTier) {
-    return `You earned ${coinEarned} coin${coinEarned === 1 ? '' : 's'}!`;
-  }
-  if (status === 'PASSED' && attempt === 1 && !hasTier) {
-    return 'Great score! Coins unlock once you have a weekly tier — finish more quizzes to climb to Bronze.';
-  }
-  if (attempt === 1 && percent < 70) {
-    return 'No stars this attempt. Pass mark is 70% for stars, 60% for course progress. Try again.';
-  }
-  if (attempt > 1) {
-    return 'Practice mode — coins are first-attempt only, but stars on the leaderboard track your best score per quiz.';
-  }
-  return '';
+function legacyLessonProgressKey(unitIndex: number, lessonIndex: number) {
+  return `${unitIndex}-${lessonIndex}`;
 }
 
-function StarRow({ filled, total = 3 }: { filled: number; total?: number }) {
-  return (
-    <div className="flex items-center gap-1.5" aria-label={`${filled} out of ${total} stars`} role="img">
-      {Array.from({ length: total }, (_, i) => (
-        <Star
-          key={i}
-          className={`w-7 h-7 transition-all duration-400 ${i < filled ? 'fill-yellow-400 text-yellow-400 scale-100' : 'fill-slate-300 dark:fill-slate-700 text-slate-300 dark:text-slate-700 scale-90'}`}
-          style={{ animationDelay: `${i * 100}ms` }}
-          aria-hidden="true"
-        />
-      ))}
-    </div>
+function getAllLessonProgressKeys(units: SidebarUnit[]) {
+  return units.flatMap((unit, unitIndex) =>
+    unit.lessons.map((lesson, lessonIndex) => lessonProgressKey(lesson, unitIndex, lessonIndex)),
   );
 }
 
-function QuizIdle({ quiz, storageKey, onStart }: { quiz: UiQuiz; storageKey: string; onStart: () => void }) {
-  const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-slate-800/70 border border-slate-600 rounded-2xl p-8 text-center shadow-xl">
-        <div className="text-5xl mb-4">📝</div>
-        <h2 className="text-2xl font-bold mb-2">{quiz.title}</h2>
-        <p className="text-gray-400 mb-6">{quiz.questions.length} questions · Multiple choice · Pass with 60%</p>
-        {stored && (
-          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium mb-6 ${stored.passed ? 'bg-green-900/50 text-green-300' : 'bg-yellow-900/50 text-yellow-300'}`}>
-            {stored.passed ? '✅' : '⚠️'} Best score: {stored.score}/{stored.total} ({Math.round((stored.score / stored.total) * 100)}%)
-          </div>
-        )}
-        <button onClick={onStart} className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors">
-          {stored ? 'Retake Quiz' : 'Start Quiz'}
-        </button>
-      </div>
-    </div>
-  );
+function normalizeCompletedLectures(completed: string[], units: SidebarUnit[]) {
+  const converted = completed.map((key) => {
+    const match = /^(\d+)-(\d+)$/.exec(key);
+    if (!match) return key;
+    const unitIndex = Number(match[1]);
+    const lessonIndex = Number(match[2]);
+    return lessonProgressKey(units[unitIndex]?.lessons?.[lessonIndex], unitIndex, lessonIndex);
+  });
+
+  return Array.from(new Set(converted));
 }
 
-function QuizTaking({ quiz, selectedAnswers, submitted, onSelect, onSubmit }: {
-  quiz: UiQuiz; selectedAnswers: Record<string, number>; submitted: boolean;
-  onSelect: (qId: string, optIdx: number) => void; onSubmit: () => void;
-}) {
-  const answered = Object.keys(selectedAnswers).length;
-  const total = quiz.questions.length;
-  return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold">{quiz.title}</h2>
-        <span className="text-sm text-gray-400">{answered}/{total} answered</span>
-      </div>
-      {quiz.questions.map((q, idx) => {
-        const selected = selectedAnswers[q.id];
-        return (
-          <div key={q.id} className="bg-slate-800/70 border border-slate-600 rounded-2xl p-5">
-            <p className="font-medium mb-4 text-sm leading-relaxed">
-              <span className="text-purple-400 font-bold mr-2">Q{idx + 1}.</span>{q.question}
-            </p>
-            <div className="space-y-2">
-              {q.options.map((opt, oIdx) => {
-                let cls = 'border border-gray-600 text-gray-300 hover:border-purple-400 hover:text-white';
-                if (submitted) {
-                  if (oIdx === q.correctIndex) cls = 'border-green-500 bg-green-900/30 text-green-300';
-                  else if (selected === oIdx) cls = 'border-red-500 bg-red-900/30 text-red-300';
-                  else cls = 'border-gray-700 text-gray-500';
-                } else if (selected === oIdx) {
-                  cls = 'border-purple-500 bg-purple-900/30 text-purple-300';
-                }
-                return (
-                  <button key={oIdx} onClick={() => onSelect(q.id, oIdx)}
-                    className={`w-full text-left px-4 py-3 rounded-lg text-sm transition-all ${cls} ${submitted ? 'cursor-default' : 'cursor-pointer'}`}>
-                    <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span>{opt}
-                  </button>
-                );
-              })}
-            </div>
-            {submitted && (
-              <p className="mt-3 text-xs text-gray-400 bg-gray-800 rounded p-2">
-                💡 <strong>Explanation:</strong> {q.explanation}
-              </p>
-            )}
-          </div>
-        );
-      })}
-      {!submitted && (
-        <button onClick={onSubmit} disabled={answered < total}
-          className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors">
-          {answered < total ? `Answer all questions (${answered}/${total})` : 'Submit Quiz'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function QuizResults({ quiz, selectedAnswers, submitData, hasTier, onRetake, onContinue }: {
-  quiz: UiQuiz;
-  selectedAnswers: Record<string, number>;
-  submitData: QuizSubmitData | null;
-  hasTier: boolean;
-  onRetake: () => void;
-  onContinue: () => void;
-}) {
-  const localCorrect = quiz.questions.filter(q => selectedAnswers[q.id] === q.correctIndex).length;
-  const localTotal = quiz.questions.length;
-
-  const correct = submitData?.correct_answers ?? localCorrect;
-  const total = submitData?.total_questions ?? localTotal;
-  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const status = submitData?.status ?? (pct >= 60 ? 'PASSED' : 'FAILED');
-  const passed = status === 'PASSED';
-  const stars = submitData?.stars ?? 0;
-  const attempt = submitData?.attempt ?? 1;
-  const coinEarned = submitData?.coin_earned ?? 0;
-  const totalPoints = submitData?.total ?? '';
-
-  const copy = resultCopy({ status, attempt, percent: pct, hasTier, coinEarned });
-
-  return (
-    <div className="max-w-2xl mx-auto" role="status" aria-live="polite">
-      {/* Status banner */}
-      <div className={`rounded-xl p-8 text-center mb-4 ${passed ? 'bg-green-900/30 border border-green-700 dark:bg-green-950/40 dark:border-green-800' : 'bg-amber-900/30 border border-amber-700 dark:bg-amber-950/40 dark:border-amber-800'}`}>
-        {/* Pass / Fail label */}
-        <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide mb-4 ${passed ? 'bg-green-800/60 text-green-300 dark:bg-green-900/60' : 'bg-amber-800/60 text-amber-300 dark:bg-amber-900/60'}`}>
-          <Trophy className="w-4 h-4" />
-          {passed ? 'Passed' : 'Failed'}
-        </div>
-
-        <h2 className="text-2xl font-bold mb-1 text-white">{quiz.title}</h2>
-
-        {/* Score */}
-        <div
-          className="text-5xl font-black mb-1 mt-3"
-          style={{ color: passed ? '#4ade80' : '#fbbf24' }}
-        >
-          {pct}%
-        </div>
-        <p className="text-gray-400 text-sm mb-4">{correct} out of {total} correct</p>
-
-        {/* Stars */}
-        <div className="flex justify-center mb-4">
-          <StarRow filled={stars} />
-        </div>
-
-        {/* Attempt badge */}
-        <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
-          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700/70 dark:bg-slate-800/70 text-slate-300 text-xs font-medium border border-slate-600 dark:border-slate-700">
-            Attempt #{attempt}
-          </span>
-          {coinEarned > 0 && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-yellow-800/50 dark:bg-yellow-900/50 text-yellow-300 text-xs font-semibold border border-yellow-700 dark:border-yellow-800">
-              +{coinEarned} coin{coinEarned === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-
-        {/* Copy message */}
-        {copy && (
-          <p className="text-sm text-slate-300 dark:text-slate-400 max-w-sm mx-auto mb-3 leading-relaxed">
-            {copy}
-          </p>
-        )}
-
-        {/* Points footnote */}
-        {totalPoints && (
-          <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Points: {totalPoints}</p>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-3 justify-center">
-        <button
-          onClick={onRetake}
-          className="px-6 py-3 border border-gray-600 dark:border-slate-600 text-gray-300 dark:text-slate-300 hover:border-white hover:text-white rounded-lg font-medium transition-colors"
-        >
-          Retake Quiz
-        </button>
-        <button
-          onClick={onContinue}
-          className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-        >
-          Continue Learning →
-        </button>
-      </div>
-    </div>
-  );
+function countCompletedLessons(completed: string[], units: SidebarUnit[]) {
+  const normalized = normalizeCompletedLectures(completed, units);
+  return getAllLessonProgressKeys(units).filter((key) => normalized.includes(key)).length;
 }
 
 export default function Learn() {
   const { courseId: learningId } = useParams<{ courseId: string }>();
+  const location = useLocation();
   const { user, tier, refreshGamification } = useAuth();
   const [myCourseDetail, setMyCourseDetail] = useState<MyCourseDetailResponse['data'] | null>(null);
   const [loadingMyCourse, setLoadingMyCourse] = useState(true);
   const [resolvedEnrollmentId, setResolvedEnrollmentId] = useState<string | null>(null);
   const [resolvedPublicCourse, setResolvedPublicCourse] = useState<Course | null>(null);
-  const cachedCourses = (() => {
+
+  const cachedCourses = useMemo(() => {
     try {
       const raw = localStorage.getItem('da_public_courses_cache');
       if (!raw) return [] as Course[];
@@ -348,31 +147,53 @@ export default function Learn() {
     } catch {
       return [] as Course[];
     }
-  })();
+  }, []);
+
   const enrollmentId = myCourseDetail?.id ?? resolvedEnrollmentId ?? learningId;
-  const fallbackCourse = cachedCourses.find(c => c.id === learningId || c.slug === learningId);
+  const fallbackCourse = cachedCourses.find((c) => c.id === learningId || c.slug === learningId);
   const resolvedCourseId = myCourseDetail?.course?.id ?? fallbackCourse?.id ?? learningId;
   const resolvedCourseSlug = fallbackCourse?.slug ?? resolvedCourseId;
-  const resolvedCourse = resolvedPublicCourse ?? cachedCourses.find(c => c.id === resolvedCourseId || c.slug === resolvedCourseId);
-  const sections: CourseSection[] = myCourseDetail
-    ? myCourseDetail.course.units.map((unit) => ({
-        section: unit.title,
-        lectures: unit.lessons.length,
-        duration: '--',
-      }))
-    : (resolvedCourse?.curriculum ?? []);
-  const courseTitle = resolvedCourse?.title ?? 'My Course';
-  const [currentSection, setCurrentSection] = useState(0);
-  const [currentLecture, setCurrentLecture] = useState(0);
-  const currentLesson = myCourseDetail?.course.units?.[currentSection]?.lessons?.[currentLecture];
+  const resolvedCourse =
+    resolvedPublicCourse ?? cachedCourses.find((c) => c.id === resolvedCourseId || c.slug === resolvedCourseId);
+
+  // Build sidebar units from API payload, falling back to public-course curriculum stubs.
+  const units: SidebarUnit[] = useMemo(() => {
+    if (myCourseDetail) {
+      return myCourseDetail.course.units.map((u) => ({
+        id: u.id,
+        title: u.title,
+        lessons: (u.lessons ?? []) as ApiLesson[],
+      }));
+    }
+    if (resolvedCourse?.curriculum) {
+      return resolvedCourse.curriculum.map((section, idx) => ({
+        id: `stub-${idx}`,
+        title: section.section,
+        lessons: Array.from({ length: section.lectures }).map((_, lIdx) => ({
+          id: `stub-${idx}-${lIdx}`,
+          title: `Lecture ${lIdx + 1}`,
+        })),
+      }));
+    }
+    return [];
+  }, [myCourseDetail, resolvedCourse]);
+
+  const courseTitle = resolvedCourse?.title ?? 'My course';
+  const [currentUnit, setCurrentUnit] = useState(0);
+  const [currentLesson, setCurrentLesson] = useState(0);
+  const currentLessonObj: ApiLesson | undefined = units[currentUnit]?.lessons?.[currentLesson];
+
   const [progress, setProgress] = useState<LectureProgress>(() => {
     try {
-      const stored = localStorage.getItem(`progress_${resolvedCourseId}`);
+      const stored = localStorage.getItem(`progress_${currentUserScope()}_${resolvedCourseId}`);
       return stored ? JSON.parse(stored) : { completedLectures: [] };
-    } catch { return { completedLectures: [] }; }
+    } catch {
+      return { completedLectures: [] };
+    }
   });
 
-  const [activeView, setActiveView] = useState<'video' | 'quiz'>('video');
+  // Quiz UI state: shared between standalone QUIZ kind and the attached quiz tab.
+  const [activeView, setActiveView] = useState<'content' | 'quiz'>('content');
   const [quizState, setQuizState] = useState<'idle' | 'taking' | 'results'>('idle');
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
@@ -390,8 +211,8 @@ export default function Learn() {
           res = await courseApi.myEnrolledCourseDetail(learningId);
         } catch {
           const myCourses = await courseApi.myEnrolledCourses();
-          const matchedCourse = (myCourses.data ?? []).find((item) =>
-            item.id === learningId || resolveCourseId(item.course) === learningId
+          const matchedCourse = (myCourses.data ?? []).find(
+            (item) => item.id === learningId || resolveCourseId(item.course) === learningId
           );
 
           if (matchedCourse?.id) {
@@ -399,7 +220,9 @@ export default function Learn() {
             res = await courseApi.myEnrolledCourseDetail(matchedCourse.id);
           } else {
             const publicCourses = await courseApi.userCourses();
-            const matchedPublicCourse = publicCourses.data.find((item) => item.id === learningId || item.slug === learningId);
+            const matchedPublicCourse = publicCourses.data.find(
+              (item) => item.id === learningId || item.slug === learningId
+            );
 
             if (matchedPublicCourse) {
               setResolvedPublicCourse(mapApiCourseToCourse(matchedPublicCourse));
@@ -409,13 +232,15 @@ export default function Learn() {
                 setResolvedPublicCourse({
                   id: detail.id ?? learningId,
                   slug: detail.slug ?? learningId,
-                  title: detail.title ?? 'My Course',
+                  title: detail.title ?? 'My course',
                   instructor: detail.instructor_name ?? detail.teacher_name ?? detail.instructor ?? 'Digital Academy',
                   rating: 4.7,
                   reviewCount: 0,
                   price: detail.discount_price ?? detail.base_price ?? 0,
                   originalPrice: detail.base_price,
-                  image: detail.cover_img ?? 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
+                  image:
+                    detail.cover_img ??
+                    'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1080&q=80',
                   category: 'development',
                   level: 'All Levels',
                   duration: 'Self-paced',
@@ -434,7 +259,7 @@ export default function Learn() {
                     : [],
                 });
               } catch {
-                // Leave the page to fall back to local/cache data.
+                /* fall back to local/cache data */
               }
             }
           }
@@ -453,7 +278,7 @@ export default function Learn() {
 
   useEffect(() => {
     if (!resolvedCourseId) return;
-    localStorage.setItem(`progress_${resolvedCourseId}`, JSON.stringify(progress));
+    localStorage.setItem(`progress_${currentUserScope()}_${resolvedCourseId}`, JSON.stringify(progress));
   }, [progress, resolvedCourseId]);
 
   useEffect(() => {
@@ -467,63 +292,75 @@ export default function Learn() {
         const payload = res?.data ?? res;
 
         if (Array.isArray(payload?.completed_lectures) && payload.completed_lectures.length > 0) {
-          setProgress({ completedLectures: payload.completed_lectures });
+          setProgress((current) => {
+            const server = normalizeCompletedLectures(payload.completed_lectures, units);
+            return { completedLectures: server };
+          });
           return;
         }
 
         const percent = Number(payload?.progress ?? 0);
-        if (!Number.isFinite(percent) || percent <= 0 || sections.length === 0) return;
+        if (!Number.isFinite(percent) || percent <= 0 || units.length === 0) return;
 
-        const total = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
+        const total = units.reduce((sum, u) => sum + u.lessons.length, 0);
         const estimatedCompleted = Math.min(total, Math.max(0, Math.round((percent / 100) * total)));
 
-        const estimatedKeys: string[] = [];
-        for (let sIdx = 0; sIdx < sections.length; sIdx += 1) {
-          for (let lIdx = 0; lIdx < sections[sIdx].lectures; lIdx += 1) {
-            if (estimatedKeys.length >= estimatedCompleted) break;
-            estimatedKeys.push(`${sIdx}-${lIdx}`);
+        const keys: string[] = [];
+        for (let sIdx = 0; sIdx < units.length; sIdx += 1) {
+          for (let lIdx = 0; lIdx < units[sIdx].lessons.length; lIdx += 1) {
+            if (keys.length >= estimatedCompleted) break;
+            keys.push(lessonProgressKey(units[sIdx].lessons[lIdx], sIdx, lIdx));
           }
-          if (estimatedKeys.length >= estimatedCompleted) break;
+          if (keys.length >= estimatedCompleted) break;
         }
 
-        setProgress({ completedLectures: estimatedKeys });
+        setProgress((current) => {
+          const localCount = countCompletedLessons(current.completedLectures, units);
+          return localCount >= keys.length ? current : { completedLectures: keys };
+        });
       } catch {
-        // Keep local progress when server progress is unavailable.
+        /* keep local */
       }
     };
 
     loadServerProgress();
-  }, [enrollmentId, resolvedCourseId, sections]);
+  }, [enrollmentId, resolvedCourseId, units]);
 
   useEffect(() => {
-    if (!sections.length) return;
-    if (currentSection >= sections.length) {
-      setCurrentSection(0);
-      setCurrentLecture(0);
+    if (!units.length) return;
+    if (currentUnit >= units.length) {
+      setCurrentUnit(0);
+      setCurrentLesson(0);
       return;
     }
-    if (currentLecture >= sections[currentSection].lectures) {
-      setCurrentLecture(0);
+    if (currentLesson >= units[currentUnit].lessons.length) {
+      setCurrentLesson(0);
     }
-  }, [sections, currentSection, currentLecture]);
+  }, [units, currentUnit, currentLesson]);
+
+  // Reset quiz state whenever the selected lesson changes.
+  useEffect(() => {
+    setActiveView('content');
+    setQuizState('idle');
+    setSelectedAnswers({});
+    setQuizSubmitted(false);
+    setQuizSubmitData(null);
+  }, [currentUnit, currentLesson]);
 
   if (loadingMyCourse) {
     return (
       <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col overflow-hidden">
-        {/* Header bar skeleton */}
         <div className="bg-slate-900/90 px-4 py-3 flex items-center gap-4 border-b border-slate-700">
           <Skeleton className="h-8 w-20 bg-slate-700" />
           <Skeleton className="h-4 flex-1 bg-slate-700" />
           <Skeleton className="h-4 w-32 bg-slate-700" />
         </div>
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar skeleton */}
           <div className="hidden lg:flex w-80 flex-col border-r border-slate-700 bg-slate-900 p-4 gap-3">
             {Array.from({ length: 6 }, (_, i) => (
               <Skeleton key={i} className="h-12 w-full rounded-lg bg-slate-700" />
             ))}
           </div>
-          {/* Player skeleton */}
           <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
             <Skeleton className="w-full max-w-3xl aspect-video rounded-xl bg-slate-700" />
             <Skeleton className="h-4 w-64 bg-slate-700" />
@@ -533,7 +370,7 @@ export default function Learn() {
     );
   }
 
-  if (!sections.length) {
+  if (!units.length) {
     return (
       <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center">
         <ErrorState
@@ -545,324 +382,330 @@ export default function Learn() {
     );
   }
 
-  const totalLectures = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
-  const completedCount = progress.completedLectures.length;
+  const totalLectures = units.reduce((sum, u) => sum + u.lessons.length, 0);
+  const completedProgressKeys = normalizeCompletedLectures(progress.completedLectures, units);
+  const completedCount = countCompletedLessons(completedProgressKeys, units);
   const completionPercent = totalLectures > 0 ? Math.round((completedCount / totalLectures) * 100) : 0;
 
-  const lectureKey = `${currentSection}-${currentLecture}`;
-  const isCompleted = progress.completedLectures.includes(lectureKey);
+  const lectureKey = lessonProgressKey(currentLessonObj, currentUnit, currentLesson);
+  const legacyLectureKey = legacyLessonProgressKey(currentUnit, currentLesson);
+  const isCompleted = completedProgressKeys.includes(lectureKey) || progress.completedLectures.includes(legacyLectureKey);
+  const kind = currentLessonObj ? inferKind(currentLessonObj) : 'ARTICLE';
+  const meta = KIND_META[kind];
 
-  const markCompleteFromQuiz = () => {
-    if (!isCompleted) {
-      const nextCompletedLectures = [...progress.completedLectures, lectureKey];
-      setProgress({ completedLectures: nextCompletedLectures });
-
-      const total = sections.reduce((sum: number, s: CourseSection) => sum + s.lectures, 0);
-      const percent = total > 0 ? Math.round((nextCompletedLectures.length / total) * 100) : 0;
-      const status = percent >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
-
-      courseApi.updateProgress({
-        enrollmentId: enrollmentId ?? undefined,
-        courseId: resolvedCourseId ?? undefined,
-        data: {
-          progress: percent,
-          status,
-          completed_lectures: nextCompletedLectures,
-        },
-      }).catch(() => {
-        toast.error('Progress could not be saved to the server. Your local progress was kept.');
-      });
-
-      toast.success('Lesson completed!');
-    }
-  };
-
-  const apiQuiz = mapApiQuizToUi(currentLesson?.quizzes?.[0], currentSection);
-  const fallbackQuiz = courseQuizzes[resolvedCourseId ?? '']?.[currentSection] as SectionQuiz | undefined;
+  // Resolve the quiz for this lesson: prefer attached quiz, fall back to mock.
+  const apiQuiz = mapApiQuizToUi(currentLessonObj?.quizzes?.[0], currentUnit);
+  const fallbackQuiz = courseQuizzes[resolvedCourseId ?? '']?.[currentUnit] as SectionQuiz | undefined;
   const sectionQuiz: UiQuiz | null = apiQuiz
     ? apiQuiz
     : fallbackQuiz
-      ? {
-          id: `fallback-${fallbackQuiz.sectionIndex}`,
-          title: fallbackQuiz.title,
-          sectionIndex: fallbackQuiz.sectionIndex,
-          questions: fallbackQuiz.questions.map((question) => ({
-            id: String(question.id),
-            question: question.question,
-            options: question.options,
-            correctIndex: question.correctIndex,
-            explanation: question.explanation,
-          })),
-        }
-      : null;
-
-  const quizStorageKey = `quiz_${resolvedCourseId}_${currentSection}_${currentLecture}`;
-
-  const bestScore = sectionQuiz
-    ? JSON.parse(localStorage.getItem(quizStorageKey) ?? 'null')
+    ? {
+        id: `fallback-${fallbackQuiz.sectionIndex}`,
+        title: fallbackQuiz.title,
+        sectionIndex: fallbackQuiz.sectionIndex,
+        questions: fallbackQuiz.questions.map((question) => ({
+          id: String(question.id),
+          question: question.question,
+          options: question.options,
+          correctIndex: question.correctIndex,
+          explanation: question.explanation,
+        })),
+      }
     : null;
 
+  const quizStorageKey = `quiz_${currentUserScope()}_${resolvedCourseId}_${currentUnit}_${currentLesson}`;
+  const bestScore = sectionQuiz ? JSON.parse(localStorage.getItem(quizStorageKey) ?? 'null') : null;
+
+  // Quiz is shown as a separate tab when (a) lesson kind is quiz-attachable
+  // AND a quiz exists, OR (b) the lesson kind IS quiz (standalone).
+  const showQuizTab = (kindAllowsQuizAttach(kind) && !!sectionQuiz) || kind === 'QUIZ';
+  // When kind === 'QUIZ' we render quiz directly even if activeView stays 'content'.
+  const effectiveView: 'content' | 'quiz' = kind === 'QUIZ' ? 'quiz' : activeView;
+
+  const markComplete = () => {
+    if (isCompleted) return;
+    const next = Array.from(new Set([...completedProgressKeys, lectureKey]));
+    setProgress({ completedLectures: next });
+    const total = units.reduce((sum, u) => sum + u.lessons.length, 0);
+    const completed = countCompletedLessons(next, units);
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const status = percent >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
+
+    courseApi
+      .updateProgress({
+        enrollmentId: enrollmentId ?? undefined,
+        courseId: resolvedCourseId ?? undefined,
+        data: { progress: percent, status, completed_lectures: next },
+      })
+      .catch(() => toast.error('Progress could not be saved to the server. Your local progress was kept.'));
+
+    toast.success('Lesson completed!');
+  };
+
+  const submitQuiz = async () => {
+    if (!sectionQuiz) return;
+    setQuizSubmitted(true);
+
+    let serverCorrect: number | null = null;
+    let serverPassed: boolean | null = null;
+    let serverData: QuizSubmitData | null = null;
+
+    if (!sectionQuiz.id.startsWith('fallback-')) {
+      try {
+        const answers = sectionQuiz.questions
+          .map((q) => {
+            const idx = selectedAnswers[q.id];
+            const variantId = typeof idx === 'number' ? q.variantIds?.[idx] : undefined;
+            if (!variantId) return null;
+            return { question: q.id, variant: variantId };
+          })
+          .filter((a): a is { question: string; variant: string } => a !== null);
+
+        const resp = await courseApi.submitUserQuiz(sectionQuiz.id, { answers });
+        serverData = resp?.data ?? null;
+        serverCorrect = Number(serverData?.correct_answers);
+        if (!Number.isFinite(serverCorrect)) serverCorrect = null;
+        serverPassed = serverData?.status === 'PASSED';
+        setQuizSubmitData(serverData);
+        refreshGamification().catch(() => {});
+      } catch (e) {
+        console.error('Quiz submit failed:', e);
+        toast.error('Quiz results could not be submitted to the server.');
+      }
+    }
+
+    const correct = sectionQuiz.questions.filter((q) => selectedAnswers[q.id] === q.correctIndex).length;
+    const total = sectionQuiz.questions.length;
+    const finalCorrect = typeof serverCorrect === 'number' ? serverCorrect : correct;
+    const passed = typeof serverPassed === 'boolean' ? serverPassed : finalCorrect / total >= 0.6;
+    const pct = total > 0 ? (finalCorrect / total) * 100 : 0;
+
+    const localHistory = user?.id ? loadQuizHistory(user.id) : [];
+    const quizHistoryCourseId = resolvedCourseId ?? learningId ?? 'unknown-course';
+    const nextAttempt =
+      typeof serverData?.attempt === 'number'
+        ? serverData.attempt
+        : localHistory.filter((entry) => entry.quizId === sectionQuiz.id).length + 1;
+
+    const existing = JSON.parse(localStorage.getItem(quizStorageKey) ?? '{}');
+    if (!existing.passed || finalCorrect > (existing.correct ?? 0)) {
+      localStorage.setItem(
+        quizStorageKey,
+        JSON.stringify({ score: finalCorrect, total, passed, correct: finalCorrect })
+      );
+    }
+
+    if (user?.id) {
+      saveQuizHistoryEntry(user.id, {
+        id: crypto.randomUUID(),
+        quizId: sectionQuiz.id,
+        quizTitle: sectionQuiz.title,
+        courseId: quizHistoryCourseId,
+        courseTitle,
+        correctAnswers: finalCorrect,
+        wrongAnswers: Math.max(total - finalCorrect, 0),
+        totalQuestions: total,
+        status: passed ? 'PASSED' : 'FAILED',
+        stars: typeof serverData?.stars === 'number' ? serverData.stars : resolveStars(pct),
+        total: String(serverData?.total ?? finalCorrect),
+        attempt: nextAttempt,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (passed) {
+      markComplete();
+      toast.success('Quiz passed! Lesson completed.');
+    }
+
+    setTimeout(() => setQuizState('results'), 800);
+  };
+
+  const KindIcon = meta.Icon;
+  const Renderer = KIND_TO_RENDERER[kind];
+  const returnTo =
+    typeof location.state?.returnTo === 'string'
+      ? location.state.returnTo
+      : resolvedCourseSlug
+        ? `/course/${resolvedCourseSlug}`
+        : '/courses';
+
   return (
-    <div className="h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col overflow-hidden">
-      {/* Top header bar */}
-      <div className="bg-slate-900/90 backdrop-blur px-4 py-3 flex items-center gap-4 border-b border-slate-700 flex-shrink-0">
-        <Link to={resolvedCourseSlug ? `/course/${resolvedCourseSlug}` : '/courses'}>
+    <div className="h-screen bg-slate-950 text-white flex flex-col overflow-hidden">
+      <header className="bg-slate-900/80 backdrop-blur-md px-4 sm:px-6 py-3 flex items-center gap-4 border-b border-slate-800 flex-shrink-0">
+        <Link to={returnTo}>
           <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white hover:bg-slate-800">
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
         </Link>
         <div className="flex-1 min-w-0">
-          <h1 className="font-semibold truncate text-sm">{courseTitle}</h1>
+          <h1 className="font-semibold truncate text-sm text-white">{courseTitle}</h1>
+          <p className="text-[11px] text-slate-500 truncate">
+            {meta.label}
+            {currentLessonObj?.title ? ` · ${currentLessonObj.title}` : ''}
+          </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-300 flex-shrink-0">
-          <div className="w-24 bg-slate-700 rounded-full h-2">
-            <div className="bg-purple-500 h-2 rounded-full transition-all" style={{ width: `${completionPercent}%` }} />
+
+        {/* Single, redesigned progress indicator. Donut + count below. */}
+        <div
+          className="hidden sm:flex items-center gap-3 flex-shrink-0"
+          aria-label={`${completionPercent}% of the course completed`}
+        >
+          <div className="text-right leading-tight">
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Progress</p>
+            <p className="text-xs font-medium text-slate-200 tabular-nums">
+              {completedCount} <span className="text-slate-500">/ {totalLectures}</span>
+            </p>
           </div>
-          <span>{completionPercent}% complete</span>
+          <div
+            className="relative w-11 h-11 rounded-full flex items-center justify-center"
+            style={{
+              background: `conic-gradient(rgb(129 140 248) ${completionPercent * 3.6}deg, rgb(30 41 59) ${completionPercent * 3.6}deg)`,
+            }}
+          >
+            <div className="absolute inset-1 rounded-full bg-slate-950 flex items-center justify-center">
+              <span className="text-[11px] font-bold text-white tabular-nums">{completionPercent}%</span>
+            </div>
+          </div>
         </div>
-      </div>
+      </header>
 
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* Main content area */}
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          {/* Tab bar */}
-          <div className="flex border-b border-slate-700 bg-slate-900/70 flex-shrink-0 px-2 sm:px-4">
-            <button onClick={() => { setActiveView('video'); setQuizState('idle'); }}
-              className={`px-4 sm:px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeView === 'video' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
-              📹 Video Lecture
-            </button>
-            <button onClick={() => setActiveView('quiz')}
-              className={`px-4 sm:px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeView === 'quiz' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
-              📝 Section Quiz
-              {bestScore?.passed && (
-                <span className="ml-2 text-xs bg-emerald-900 text-emerald-300 px-1.5 py-0.5 rounded-full">
-                  {Math.round((bestScore.score / bestScore.total) * 100)}%
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Video view */}
-          {activeView === 'video' && (
-            <>
-              <div className="bg-black flex items-center justify-center flex-shrink-0" style={{ height: '60%' }}>
-                {currentLesson?.video ? (
-                  <video
-                    key={currentLesson.video}
-                    src={currentLesson.video}
-                    controls
-                    className="w-full h-full object-contain bg-black"
-                  />
-                ) : (
-                  <div className="text-center">
-                    <PlayCircle className="w-20 h-20 text-purple-400 mx-auto mb-4" />
-                    <p className="text-gray-400">
-                      {sections[currentSection]?.section} — Lecture {currentLecture + 1}
-                    </p>
-                    <p className="text-sm text-gray-500 mt-1">No video available</p>
-                  </div>
+          {/* Tab bar appears only when a quiz tab is relevant alongside non-quiz content. */}
+          {showQuizTab && kind !== 'QUIZ' && (
+            <div className="flex gap-1 border-b border-slate-800 bg-slate-950 flex-shrink-0 px-3 sm:px-5 pt-2">
+              <button
+                onClick={() => {
+                  setActiveView('content');
+                  setQuizState('idle');
+                }}
+                className={`px-3 py-2 rounded-t-lg text-sm font-medium transition-all inline-flex items-center gap-2 ${
+                  activeView === 'content'
+                    ? `${meta.bgTint} ${meta.color}`
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <KindIcon className="w-4 h-4" /> {meta.label}
+              </button>
+              <button
+                onClick={() => setActiveView('quiz')}
+                className={`px-3 py-2 rounded-t-lg text-sm font-medium transition-all inline-flex items-center gap-2 ${
+                  activeView === 'quiz'
+                    ? 'bg-pink-500/10 text-pink-300 ring-1 ring-inset ring-pink-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" /> Quiz
+                {bestScore?.passed && (
+                  <span className="text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 rounded-full ring-1 ring-inset ring-emerald-500/30">
+                    {Math.round((bestScore.score / bestScore.total) * 100)}%
+                  </span>
                 )}
-              </div>
-              <div className="p-6 bg-slate-900/70 overflow-y-auto flex-1 min-h-0">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-slate-700 bg-slate-800/80 p-4">
-                        <div className="flex items-center gap-2 mb-2 text-slate-300">
-                          <FileText className="w-4 h-4 text-purple-300" />
-                          <span className="text-xs uppercase tracking-wider">Lesson Title</span>
-                        </div>
-                        <h2 className="text-lg font-semibold leading-snug text-white break-words">
-                          {currentLesson?.title ?? `Lecture ${currentLecture + 1}`}
-                        </h2>
-                        <p className="text-xs text-slate-400 mt-2">
-                          {sections[currentSection]?.section} • {currentLecture + 1} / {sections[currentSection]?.lectures}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-700 bg-slate-800/80 p-4">
-                        <div className="flex items-center gap-2 mb-2 text-slate-300">
-                          <ClipboardList className="w-4 h-4 text-emerald-300" />
-                          <span className="text-xs uppercase tracking-wider">Additional Task</span>
-                        </div>
-                        <p className="text-sm text-slate-100 leading-relaxed break-words min-h-12">
-                          {currentLesson?.additional_task?.trim() || 'No additional task provided for this lesson.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-800/80 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-wider text-slate-400">Presentation</p>
-                        <p className="text-sm text-slate-200 mt-1">
-                          {currentLesson?.presentation ? 'Presentation file available' : 'No presentation available'}
-                        </p>
-                      </div>
-                      {currentLesson?.presentation ? (
-                        <a
-                          href={currentLesson.presentation}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-medium transition-colors"
-                        >
-                          Open Presentation
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-2 rounded-xl bg-slate-700 text-slate-300 text-sm">
-                          No File
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm border ${isCompleted ? 'bg-emerald-900/50 border-emerald-700 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-300'}`}>
-                    {isCompleted ? <CheckCircle className="w-4 h-4" /> : <Trophy className="w-4 h-4" />}
-                    {isCompleted ? 'Completed' : 'Complete by passing quiz'}
-                  </div>
-                </div>
-              </div>
-            </>
+              </button>
+            </div>
           )}
 
-          {/* Quiz view */}
-          {activeView === 'quiz' && (
+          {effectiveView === 'content' && currentLessonObj && Renderer && (
+            <Renderer
+              lesson={currentLessonObj}
+              isCompleted={isCompleted}
+              onMarkComplete={markComplete}
+              hasFollowUpQuiz={kindAllowsQuizAttach(kind) && !!sectionQuiz}
+              followUpQuizPassed={!!bestScore?.passed}
+              onStartFollowUpQuiz={() => {
+                setActiveView('quiz');
+                setQuizState('idle');
+              }}
+            />
+          )}
+
+          {effectiveView === 'quiz' && (
             <div className="flex-1 overflow-y-auto p-6 bg-slate-900/70 min-h-0">
               {!sectionQuiz ? (
-                <div className="text-center py-16 text-gray-400">
-                  <p className="text-4xl mb-4">📝</p>
-                  <p className="text-lg">No quiz is available for this lesson.</p>
+                <div className="text-center py-20 max-w-md mx-auto">
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-pink-500/10 text-pink-300 ring-1 ring-inset ring-pink-500/30 mb-4">
+                    <ClipboardList className="w-7 h-7" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white">No quiz available</h3>
+                  <p className="text-sm text-slate-400 mt-2">
+                    This quiz lesson has no questions attached yet. You can still mark it complete for local testing.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-5 bg-indigo-600 hover:bg-indigo-500 text-white"
+                    disabled={isCompleted}
+                    onClick={markComplete}
+                  >
+                    {isCompleted ? 'Completed' : 'Mark as complete'}
+                  </Button>
                 </div>
               ) : quizState === 'idle' ? (
-                <QuizIdle quiz={sectionQuiz} storageKey={quizStorageKey} onStart={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); setQuizSubmitData(null); }} />
+                <QuizIdle
+                  quiz={sectionQuiz}
+                  storageKey={quizStorageKey}
+                  onStart={() => {
+                    setQuizState('taking');
+                    setSelectedAnswers({});
+                    setQuizSubmitted(false);
+                    setQuizSubmitData(null);
+                  }}
+                />
               ) : quizState === 'taking' ? (
-                <QuizTaking quiz={sectionQuiz} selectedAnswers={selectedAnswers} submitted={quizSubmitted}
-                  onSelect={(qId, optIdx) => !quizSubmitted && setSelectedAnswers(prev => ({ ...prev, [qId]: optIdx }))}
-                  onSubmit={async () => {
-                    setQuizSubmitted(true);
-
-                    let serverCorrectAnswers: number | null = null;
-                    let serverPassed: boolean | null = null;
-                    let serverData: QuizSubmitData | null = null;
-
-                    if (!sectionQuiz.id.startsWith('fallback-')) {
-                      try {
-                        const answers = sectionQuiz.questions
-                          .map((question) => {
-                            const selectedIndex = selectedAnswers[question.id];
-                            const variantId =
-                              typeof selectedIndex === 'number' ? question.variantIds?.[selectedIndex] : undefined;
-
-                            if (!variantId) return null;
-                            return {
-                              question: question.id,
-                              variant: variantId,
-                            };
-                          })
-                          .filter((item): item is { question: string; variant: string } => item !== null);
-
-                        const quizResponse = await courseApi.submitUserQuiz(sectionQuiz.id, { answers });
-                        serverData = quizResponse?.data ?? null;
-                        serverCorrectAnswers = Number(serverData?.correct_answers);
-                        if (!Number.isFinite(serverCorrectAnswers)) {
-                          serverCorrectAnswers = null;
-                        }
-                        serverPassed = serverData?.status === 'PASSED';
-                        setQuizSubmitData(serverData);
-                        refreshGamification().catch(() => {/* non-critical */});
-                      } catch (error) {
-                        console.error('Quiz submit failed:', error);
-                        toast.error('Quiz results could not be submitted to the server.');
-                      }
-                    }
-
-                    const correct = sectionQuiz.questions.filter(q => selectedAnswers[q.id] === q.correctIndex).length;
-                    const total = sectionQuiz.questions.length;
-                    const finalCorrect = typeof serverCorrectAnswers === 'number' ? serverCorrectAnswers : correct;
-                    const passed = typeof serverPassed === 'boolean' ? serverPassed : (finalCorrect / total >= 0.6);
-                    const percent = total > 0 ? (finalCorrect / total) * 100 : 0;
-                    const localHistory = user?.id ? loadQuizHistory(user.id) : [];
-                    const quizHistoryCourseId = resolvedCourseId ?? learningId ?? 'unknown-course';
-                    const nextAttempt = typeof serverData?.attempt === 'number'
-                      ? serverData.attempt
-                      : localHistory.filter((entry) => entry.quizId === sectionQuiz.id).length + 1;
-
-                    const existing = JSON.parse(localStorage.getItem(quizStorageKey) ?? '{}');
-                    if (!existing.passed || finalCorrect > (existing.correct ?? 0)) {
-                      localStorage.setItem(quizStorageKey, JSON.stringify({ score: finalCorrect, total, passed, correct: finalCorrect }));
-                    }
-
-                    if (user?.id) {
-                      saveQuizHistoryEntry(user.id, {
-                        id: crypto.randomUUID(),
-                        quizId: sectionQuiz.id,
-                        quizTitle: sectionQuiz.title,
-                        courseId: quizHistoryCourseId,
-                        courseTitle,
-                        correctAnswers: finalCorrect,
-                        wrongAnswers: Math.max(total - finalCorrect, 0),
-                        totalQuestions: total,
-                        status: passed ? 'PASSED' : 'FAILED',
-                        stars: typeof serverData?.stars === 'number' ? serverData.stars : resolveStars(percent),
-                        total: String(serverData?.total ?? finalCorrect),
-                        attempt: nextAttempt,
-                        createdAt: new Date().toISOString(),
-                      });
-                    }
-
-                    if (passed) {
-                      markCompleteFromQuiz();
-                      toast.success('Quiz passed! Lesson completed.');
-                    }
-
-                    setTimeout(() => setQuizState('results'), 800);
-                  }} />
+                <QuizTaking
+                  quiz={sectionQuiz}
+                  selectedAnswers={selectedAnswers}
+                  submitted={quizSubmitted}
+                  onSelect={(qId, optIdx) =>
+                    !quizSubmitted && setSelectedAnswers((prev) => ({ ...prev, [qId]: optIdx }))
+                  }
+                  onSubmit={submitQuiz}
+                />
               ) : (
                 <QuizResults
                   quiz={sectionQuiz}
                   selectedAnswers={selectedAnswers}
                   submitData={quizSubmitData}
                   hasTier={tier !== null}
-                  onRetake={() => { setQuizState('taking'); setSelectedAnswers({}); setQuizSubmitted(false); setQuizSubmitData(null); }}
-                  onContinue={() => { setActiveView('video'); setQuizState('idle'); }}
+                  onRetake={() => {
+                    setQuizState('taking');
+                    setSelectedAnswers({});
+                    setQuizSubmitted(false);
+                    setQuizSubmitData(null);
+                  }}
+                  onContinue={() => {
+                    if (kind === 'QUIZ') {
+                      // Jump to next lesson in the course on continue from a standalone quiz.
+                      const flatTotal = units[currentUnit].lessons.length;
+                      if (currentLesson + 1 < flatTotal) {
+                        setCurrentLesson(currentLesson + 1);
+                      } else if (currentUnit + 1 < units.length) {
+                        setCurrentUnit(currentUnit + 1);
+                        setCurrentLesson(0);
+                      }
+                    } else {
+                      setActiveView('content');
+                      setQuizState('idle');
+                    }
+                  }}
                 />
               )}
             </div>
           )}
         </div>
 
-        {/* Sidebar: course content */}
-        <div className="hidden xl:block w-80 bg-slate-900/70 border-l border-slate-700 overflow-y-auto flex-shrink-0">
-          <div className="p-4 border-b border-slate-700 sticky top-0 bg-slate-900/95 backdrop-blur">
-            <h3 className="font-semibold">Course Content</h3>
-            <p className="text-sm text-slate-400">{completedCount}/{totalLectures} completed</p>
-          </div>
-          {sections.map((section, sIdx) => (
-            <div key={sIdx}>
-              <div className="px-4 py-3 bg-slate-950 border-b border-slate-700">
-                <p className="font-medium text-sm">{section.section}</p>
-                <p className="text-xs text-slate-400">{section.lectures} lectures • {section.duration}</p>
-              </div>
-              {Array.from({ length: section.lectures }).map((_, lIdx) => {
-                const key = `${sIdx}-${lIdx}`;
-                const done = progress.completedLectures.includes(key);
-                const active = currentSection === sIdx && currentLecture === lIdx;
-                return (
-                  <button
-                    key={lIdx}
-                    onClick={() => { setCurrentSection(sIdx); setCurrentLecture(lIdx); setActiveView('video'); setQuizState('idle'); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-slate-800 transition-colors border-b border-slate-700/50 ${active ? 'bg-slate-800 border-l-2 border-purple-400' : ''}`}
-                  >
-                    {done
-                      ? <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                      : <PlayCircle className={`w-4 h-4 flex-shrink-0 ${active ? 'text-purple-400' : 'text-slate-500'}`} />
-                    }
-                    <span className={`${done ? 'text-slate-400' : ''} truncate`}>Lecture {lIdx + 1}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <LearnSidebar
+          units={units}
+          currentUnit={currentUnit}
+          currentLesson={currentLesson}
+          completedKeys={progress.completedLectures}
+          totalLessons={totalLectures}
+          completedCount={completedCount}
+          onSelect={(uIdx, lIdx) => {
+            setCurrentUnit(uIdx);
+            setCurrentLesson(lIdx);
+          }}
+        />
       </div>
     </div>
   );
